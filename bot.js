@@ -1,6 +1,14 @@
 // Based on the botscript by CFlakes.
 
-require([], function() {
+require(['map/parse-map', 'map/navmesh', 'map/polypartition'],
+function( mapParser,       NavMesh,       pp) {
+  // Alias useful classes.
+  var Point = pp.Point;
+  var Poly = pp.Poly;
+  console.log("Bot Loading.");
+
+  // A Bot is responsible for decision making, navigation (with the aid of map-related modules)
+  // and low-level steering/locomotion.
   var Bot = function() {
     // simPressed will be used to detect if the bot is pressing any keys: right, left, down and up. We define the object (simPressed) here and set the variables to false.
     // keyWait will be used to check when the last keydown event was sent. This is usefull so the server won't kick you. The wait is separated for x and y keys.
@@ -14,11 +22,19 @@ require([], function() {
     document.onkeyup = this._keyUpdateFunc(false);
 
     this.destination = {x: undefined, y: undefined};
+    this.actions = {};
+
+    this.initialized = false;
+    this.mapInitialized = false;
+    this.init();
+    this.processMap();
+    this.consider();
   };
 
   // Initialize functionality dependent on tagpro provisioning playerId.
   Bot.prototype.init = function() {
-    if (!tagpro.playerId) {return setTimeout(this.init.bind(this), 250);}
+    console.log("Trying init.");
+    if (typeof tagpro !== 'object' || !tagpro.playerId) {return setTimeout(this.init.bind(this), 250);}
 
     // self is your player object.
     this.self = tagpro.players[tagpro.playerId];
@@ -27,37 +43,120 @@ require([], function() {
     this.playerId = tagpro.playerId;
 
     // getAcc function set as an interval loop.
-    setInterval(this.getAcc.bind(this), 10);
+    this.actions['accInterval'] = setInterval(this.getAcc.bind(this), 10);
 
     // getFC function set as an interval loop.
-    setInterval(this.getFC.bind(this), 10);
+    this.actions['getFCInterval'] = setInterval(this.getFC.bind(this), 10);
+    
+    // Set up some drawing functions for debugging.
+    drawPoly = function(poly, context, color) {
+      if (typeof color == 'undefined') color = 'black';
+      var self = tagpro.players[tagpro.playerId];
+      // Resize relative to canvas offset and position.
+      // Values from global-game
+      var a = {x: 0, y: 0};
+      var e = 40 / 2; // from tile size 40.
+      var cLeft = Math.round(tagpro.viewPort.source.x / tagpro.zoom) * tagpro.zoom - a.x * tagpro.zoom + e;
+      var cTop = Math.round(tagpro.viewPort.source.y / tagpro.zoom) * tagpro.zoom - a.y * tagpro.zoom + e;
+      function remap(e) {
+        return {
+          x: e.x * (1 / tagpro.zoom) - (self.x - context.canvas.width / 2),
+          y: e.y * (1 / tagpro.zoom) - (self.y - context.canvas.height / 2)
+        }
+      }
+      context.beginPath();
+      var start = remap(poly.getPoint(0));
+      context.moveTo(start.x, start.y);
+      for (var i = 1; i < poly.numpoints; i++) {
+        var nextPoint = remap(poly.getPoint(i));
+        context.lineTo(nextPoint.x, nextPoint.y);
+      }
+      context.lineTo(start.x, start.y);
+      context.lineWidth = 1;
+      context.strokeStyle = color;
+      context.stroke();
+      context.closePath();
+    }
 
-        // Store tagpro.ui.draw so we can add to it.
+    // Draw outlines on canvas.
+    drawOutline = function(shapes, context) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (shapes[i] instanceof Poly) {
+          drawPoly(shapes[i], context);
+        } else {
+          drawShape(shapes[i], context);
+        }
+      }
+    }
+
+    
+
+    // Store tagpro.ui.draw so we can add to it.
     var uiDraw = tagpro.ui.draw;
     
     // Using ui.draw to display where your bot is headed.
     tagpro.ui.draw = function(e) {
       e.save();
       e.globalAlpha = 1;
-      e.lineCap = 'round';
-      e.lineWidth = 40;
-      e.beginPath();
-      e.strokeStyle = self.team == 1 ? "rgba(255, 0, 0, 0.2)" : "rgba(0, 0, 255, 0.2)";
-      e.moveTo(viewPort.width/2, viewPort.height/2);
-      e.lineTo(viewPort.width/2 + (window.destination.x - window.self.x), viewPort.height/2 + (window.destination.y - window.self.y));
-      e.stroke();
-      e.restore();
+
+      if (window.hasOwnProperty('BotMeshShapes')) {
+        drawOutline(window.BotMeshShapes, e);
+      }
       
       // Restore tagpro.ui.draw and apply our changes.
       return uiDraw.apply(this, arguments);
     };
     console.log("Bot loaded!");
+    this.initialized = true;
+  }
+
+  // Consider the game and take necessary actions.
+  Bot.prototype.consider = function() {
+    // Ensure everything is initialized.
+    if (!this.initialized || !this.mapInitialized) { return setTimeout(function() { this.consider() }.bind(this), 50); }
+    // Remove getFC.
+    if (this.actions.hasOwnProperty('getFC')) {
+      clearInterval(this.actions['getFCInterval'])
+      delete this.actions['getFCInterval'];
+    }
+
+    // First, just get enemy flag location, set it as destination, find path to it, go get it, return to base
+    var enemyFlagPoint = this.findEnemyFlag();
+    var ownFlagPoint = this.findOwnFlag();
+
+    var destination;
+    // Check if I have the flag.
+    var iHaveFlag = this.self.flag;
+    if (iHaveFlag) {
+      destination = ownFlagPoint;
+    } else {
+      destination = enemyFlagPoint;
+    }
+
+    // Get path.
+    var path = this.navmesh.calculatePath(this._getLocation(), destination);
+
+    // get to it!
+    this.navigate(path);
+  }
+
+  // Process map-related things.
+  Bot.prototype.processMap = function() {
+    if (typeof tagpro !== 'object' || !tagpro.map) {return setTimeout(this.processMap.bind(this), 250);}
+    this.mapTiles = tagpro.map;
+    var polys = mapParser.parse(this.mapTiles);
+    polys = mapParser.convertShapesToPolys(polys);
+    this.navmesh = new NavMesh(polys);
+    this.mapInitialized = true;
+    // for writing on map
+    window.BotMeshShapes = this.navmesh.polys;
+    console.log("Navmesh constructed.");
   }
 
   // The sendKey function, use it by calling "sendKey('direction', 'keyState')".
   // direction must be 'right', 'left', 'down' or 'up'. keyState must be 'keydown' or 'keyup'.
   Bot.prototype.sendKey = function(direction, keyState) {      
-    // Defining the jQuerry ($) key event as 'e'.
+    // Defining the jQuery ($) key event as 'e'.
     var e = $.Event(keyState);
     
     // This switch statement will first check what direction was sent.
@@ -138,6 +237,94 @@ require([], function() {
     }
   }
 
+  // Takes a path and navigates it, assuming a static target right now.
+  Bot.prototype.navigate = function(path) {
+    var goal; // goal point.
+    // Indicates goal is close enough to us that we should check how
+    // close and quit navigation if close enough.
+    var closegoal = false;
+    var me = this._getLocation();
+    // todo: use _getPLocation but remove or handle the possibility of getting points outside of walkable range.
+    var currentPoly = this.navmesh.findPolyForPoint(me);
+    // Find next location to seek out in path.
+    for (var i = 0; i < path.length; i++) {
+      if (this.navmesh.findPolyForPoint(path[i]) == currentPoly) {
+        if (i !== path.length - 1) {
+          goal = path[i+1];
+        } else {
+          goal = path[i];
+          closegoal = true;
+        }
+        break;
+      }
+    }
+    // If goal found.
+    if (goal) {
+      // Seek after a little delay so we can finish setup.
+      setTimeout(function() {this._seek(goal);}.bind(this), 10);
+      if (!this.actions.hasOwnProperty('navigateInterval')) {
+        this.actions['navigateInterval'] = setInterval(function() {this.navigate(path);}.bind(this), 60);
+      }
+
+      if (closegoal) {
+        // We've touched it.
+        if (me.dist(goal) < 20) {
+          clearInterval(this.actions['navigateInterval']);
+          delete this.actions['navigateInterval'];
+        }
+      }
+    } else { // goal not found. clean up
+      // Break interval and remove property.
+      if (this.actions.hasOwnProperty('navigateInterval')) {
+        clearInterval(this.actions['navigateInterval']);
+        delete this.actions['navigateInterval'];
+      }
+      // Todo: notify listeners that goal has been reached.
+    }
+  }
+
+  // Get predicted location based on current position and velocity. Returns a Point object.
+  // The multiplier argument is optional and specifies how many time steps into the future
+  // the prediction will be.
+  // todo: handle obstacles.
+  Bot.prototype._getPLocation = function(multiplier) {
+    if (typeof multiplier === 'undefined') multiplier = 60;
+    var selfX = this.self.x + this.self.lx * multiplier;
+    var selfY = this.self.y + this.self.ly * multiplier;
+    return new Point(selfX, selfY);
+  }
+
+  // Get current location as a point.
+  Bot.prototype._getLocation = function() {
+    return new Point(this.self.x, this.self.y);
+  }
+
+  // Function for approaching a static target from the current position.
+  // Does not handle obstacles.
+  Bot.prototype._seek = function(target) {
+    // Get your predicted position using location + speed * 60.
+    var selfX = this.self.x + this.self.lx*60;
+    var selfY = this.self.y + this.self.ly*60;
+        
+    // If their predicted x location is less than yours, move left. Else move right.
+    if (target.x < selfX) {
+      this.sendKey('right', 'keyup');
+      this.sendKey('left', 'keydown');
+    } else {
+      this.sendKey('left', 'keyup');
+      this.sendKey('right', 'keydown');
+    }
+    
+    // If their predicted y location is less than yours, move up. Else move down.
+    if (target.y < selfY) {
+      this.sendKey('down', 'keyup');
+      this.sendKey('up', 'keydown');
+    } else {
+      this.sendKey('up', 'keyup');
+      this.sendKey('down', 'keydown');
+    }
+  }
+
   // The brain, this holds all your math variables and commands used to chase the enemy FC.
   Bot.prototype.getFC = function() {
     // 'for in' loop to loop through players.
@@ -151,8 +338,8 @@ require([], function() {
         if (player.draw && player.team !== this.self.team && player.flag == 3) {
           
           // Get your predicted position using location + speed * 60.
-          var selfX = self.x + self.lx*60,
-            selfY = self.y + self.ly*60;
+          var selfX = this.self.x + this.self.lx*60,
+            selfY = this.self.y + this.self.ly*60;
           
           // Get enemy's predicted position using location + speed * 60 + keypresses.
           this.destination = {x: player.x + player.lx*60 + player.accX, y: player.y + player.ly*60 + player.accY};
@@ -192,8 +379,35 @@ require([], function() {
     }.bind(this);
   }
 
+  // Get enemy flag coordinates. todo: differentiate between present and non-present flag.
+  Bot.prototype.findEnemyFlag = function() {
+    // Get flag value.
+    var flagval = (this.self.team + 2 == 4) ? 3 : 4;
+    for (column in tagpro.map) {
+      for (tile in tagpro.map[column]) {
+        if (tagpro.map[column][tile] == flagval || tagpro.map[column][tile] == flagval+0.1) {
+          return new Point(40 * column, 40 * tile);
+        }
+      }
+    }
+    return null;
+  }
+
+  // Get own flag coordinates. todo: differentiate between present and non-present flag.
+  Bot.prototype.findOwnFlag = function() {
+    var flagval = this.self.team + 2;
+    for (column in tagpro.map) {
+      for (tile in tagpro.map[column]) {
+        if (tagpro.map[column][tile] == flagval || tagpro.map[column][tile] == flagval+0.1) {
+          return new Point(40 * column, 40 * tile);
+        }
+      }
+    }
+    return null;
+  }
+
+  // Start.
   var bot = new Bot();
-  bot.init();
 });
  
  
