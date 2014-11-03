@@ -1,4 +1,11 @@
 // Based on the botscript by CFlakes.
+requirejs.config({
+  shim: {
+    'map/clipper': {
+      exports: 'ClipperLib'
+    }
+  }
+});
 
 require(['map/parse-map', 'map/navmesh', 'map/polypartition'],
 function( mapParser,       NavMesh,       pp) {
@@ -239,23 +246,20 @@ function( mapParser,       NavMesh,       pp) {
 
   // Takes a path and navigates it, assuming a static target right now.
   Bot.prototype.navigate = function(path) {
-    var goal; // goal point.
-    // Indicates goal is close enough to us that we should check how
-    // close and quit navigation if close enough.
-    var closegoal = false;
+    var goal = false;
     var me = this._getLocation();
     // todo: use _getPLocation but remove or handle the possibility of getting points outside of walkable range.
-    var currentPoly = this.navmesh.findPolyForPoint(me);
+
     // Find next location to seek out in path.
-    for (var i = 0; i < path.length; i++) {
-      if (this.navmesh.findPolyForPoint(path[i]) == currentPoly) {
-        if (i !== path.length - 1) {
-          goal = path[i+1];
+    if (path.length > 0) {
+      goal = path[0];
+      if (me.dist(goal) < 20) {
+        if (path.length !== 0) {
+          path.shift();
+          goal = path[0];
         } else {
-          goal = path[i];
-          closegoal = true;
+          goal = false;
         }
-        break;
       }
     }
     // If goal found.
@@ -265,20 +269,13 @@ function( mapParser,       NavMesh,       pp) {
       if (!this.actions.hasOwnProperty('navigateInterval')) {
         this.actions['navigateInterval'] = setInterval(function() {this.navigate(path);}.bind(this), 60);
       }
-
-      if (closegoal) {
-        // We've touched it.
-        if (me.dist(goal) < 20) {
-          clearInterval(this.actions['navigateInterval']);
-          delete this.actions['navigateInterval'];
-        }
-      }
     } else { // goal not found. clean up
       // Break interval and remove property.
       if (this.actions.hasOwnProperty('navigateInterval')) {
         clearInterval(this.actions['navigateInterval']);
         delete this.actions['navigateInterval'];
       }
+      this.consider();
       // Todo: notify listeners that goal has been reached.
     }
   }
