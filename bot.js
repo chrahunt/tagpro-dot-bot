@@ -247,13 +247,17 @@ function( mapParser,       NavMesh,       pp) {
   // Takes a path and navigates it, assuming a static target right now.
   Bot.prototype.navigate = function(path) {
     var goal = false;
-    var me = this._getLocation();
+    var me = this._getPLocation();
     // todo: use _getPLocation but remove or handle the possibility of getting points outside of walkable range.
-
+    if (this.self.dead) {
+      this._clearInterval('navigateInterval');
+      // Consider again after waiting until respawn.
+      setTimeout(function() { this.consider();}.bind(this), 3200);
+    }
     // Find next location to seek out in path.
     if (path.length > 0) {
       goal = path[0];
-      if (me.dist(goal) < 20) {
+      if (me.dist(goal) < 15) {
         if (path.length !== 0) {
           path.shift();
           goal = path[0];
@@ -267,19 +271,23 @@ function( mapParser,       NavMesh,       pp) {
       // Seek after a little delay so we can finish setup.
       setTimeout(function() {this._seek(goal);}.bind(this), 10);
       if (!this.actions.hasOwnProperty('navigateInterval')) {
-        this.actions['navigateInterval'] = setInterval(function() {this.navigate(path);}.bind(this), 60);
+        this.actions['navigateInterval'] = setInterval(function() {this.navigate(path);}.bind(this), 25);
       }
     } else { // goal not found. clean up
       // Break interval and remove property.
-      if (this.actions.hasOwnProperty('navigateInterval')) {
-        clearInterval(this.actions['navigateInterval']);
-        delete this.actions['navigateInterval'];
-      }
+      this._clearInterval('navigateInterval');
       this.consider();
       // Todo: notify listeners that goal has been reached.
     }
   }
 
+  // Clear the interval given by function name.
+  Bot.prototype._clearInterval = function(name) {
+    if (this.actions.hasOwnProperty(name)) {
+      clearInterval(this.actions[name]);
+      delete this.actions[name];
+    }
+  }
   // Get predicted location based on current position and velocity. Returns a Point object.
   // The multiplier argument is optional and specifies how many time steps into the future
   // the prediction will be.
