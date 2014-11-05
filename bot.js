@@ -85,7 +85,13 @@ function( mapParser,       NavMesh,       pp) {
     }
 
     // Get path.
-    var path = this.navmesh.calculatePath(this._getLocation(), destination);
+    try {
+      var path = this.navmesh.calculatePath(this._getLocation(), destination);
+    } catch(e) {
+      console.warn("Caught: " + e.toString());
+      setTimeout(function() { this.consider(); }.bind(this), 1500);
+      return;
+    }
 
     // get to it!
     this.navigate(path);
@@ -189,7 +195,17 @@ function( mapParser,       NavMesh,       pp) {
   }
 
   // Takes a path and navigates it, assuming a static target right now.
-  Bot.prototype.navigate = function(path) {
+  Bot.prototype.navigate = function(path, iteration) {
+    if (typeof iteration == 'undefined') iteration = 0;
+    iteration++;
+    if (iteration == 10) {
+      try {
+        path = this.navmesh.calculatePath(this._getLocation(), path[path.length - 1]);
+      } catch(e) {
+        console.warn("Caught: " + e.toString());
+        setTimeout(function() { this.consider(); }.bind(this), 1500);
+      }
+    }
     var goal = false;
     var me = this._getLocation();
     // todo: use _getPLocation but remove or handle the possibility of getting points outside of walkable range.
@@ -199,40 +215,15 @@ function( mapParser,       NavMesh,       pp) {
       setTimeout(function() { this.consider();}.bind(this), 3500);
     }
 
-    // The time for each edge.
-    var edgeTime = 1000;
-    // Total time for each path.
-    var pathTime = this.navmesh.obstacle_edges.length * edgeTime;
-    // Check whether something is visible.
-    checkVisible = function(path, path_index, my_location) {
-      var point = path[path_index];
-      window.BotGoal = point;
-      console.log("Checking to see if this point is visible.");
-
-      // Right now just check for visual, don't worry about return value.
-      this.navmesh.checkVisible(me, point);
-      if (path_index !== path.length - 1) {
-        setTimeout(function() {
-          checkVisible.call(this, path, path_index + 1, my_location);
-        }.bind(this), pathTime);
-      }
-    }
     // Find next location to seek out in path.
     if (path.length > 0) {
-      console.log("");
-      setTimeout(function() {
-        checkVisible.call(this, path, 0, me);
-      }.bind(this), pathTime);
-      /*
       goal = path[0];
       var cut = false;
       var last_index = 0;
       for (var i = 0; i < path.length; i++) {
         if (this.navmesh.checkVisible(me, path[i])) {
-          console.log("This point is visible: " + );
           goal = path[i];
           if (i !== 0) {
-            console.log("Removable.");
             last_index = i;
             cut = true;
           }
@@ -241,31 +232,28 @@ function( mapParser,       NavMesh,       pp) {
         }
       }
       if (cut) {
-        console.log("Removing.");
         path.splice(0, last_index - 1);
       }
-      */
-    } /*else if (path.length == 1) {
-      goal = path[0];
-      if (me.dist(goal)) {
-        goal = false;
+      if (path.length == 1) {
+        goal = path[0];
+        if (me.dist(goal) < 20) {
+          goal = false;
+        }
       }
-    }*/
+    }
+    
     // If goal found.
-    /*
-    if (!goal) {
+    if (goal) {
       window.BotGoal = goal;
       // Seek after a little delay so we can finish setup.
       setTimeout(function() {this._seek(goal);}.bind(this), 10);
-      if (!this.actions.hasOwnProperty('navigateInterval')) {
-        this.actions['navigateInterval'] = setInterval(function() {this.navigate(path);}.bind(this), 25);
-      }
+      setTimeout(function() {this.navigate(path, iteration);}.bind(this), 25)
     } else { // goal not found. clean up
       // Break interval and remove property.
-      this._clearInterval('navigateInterval');
-      //this.consider();
+      //this._clearInterval('navigateInterval');
       // Todo: notify listeners that goal has been reached.
-    }*/
+      this.consider();
+    }
   }
 
   // Clear the interval given by function name.
@@ -276,10 +264,11 @@ function( mapParser,       NavMesh,       pp) {
     }
   }
 
+  // Set up drawing functions.
   Bot.prototype._setDraw = function() {
     var self = tagpro.players[tagpro.playerId];
     
-    // remap a function to proper coordinates.
+    // Remap a coordinate so that it looks static, similar to the map tiles.
     function remap(e, context) {
       return {
         x: e.x * (1 / tagpro.zoom) - (self.x - context.canvas.width / 2),
@@ -287,7 +276,7 @@ function( mapParser,       NavMesh,       pp) {
       }
     }
     
-    // Set up some drawing functions for debugging.
+    // Given a polygon, context, and color, draw its outline.
     drawPoly = function(poly, context, color) {
       if (typeof color == 'undefined') color = 'black';
       // Resize relative to canvas offset and position.
@@ -308,7 +297,7 @@ function( mapParser,       NavMesh,       pp) {
       context.closePath();
     }
 
-    // Draw outlines on canvas.
+    // Draw multiple shape/polygons on canvas.
     drawOutline = function(shapes, context) {
       for (var i = 0; i < shapes.length; i++) {
         if (shapes[i] instanceof Poly) {
@@ -319,6 +308,7 @@ function( mapParser,       NavMesh,       pp) {
       }
     }
 
+    // Draw a green dot.
     drawPoint = function(point, context) {
       point = remap(point, context);
       var radius = 5;
@@ -331,6 +321,7 @@ function( mapParser,       NavMesh,       pp) {
       context.stroke();
     }
 
+    // Draw an edge on the canvas.
     drawLine = function(edge, context, color) {
       if (typeof color == 'undefined') color = 'black';
       var p1 = remap(edge.p1, context);
