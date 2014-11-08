@@ -55,65 +55,9 @@ function( mapParser,       NavMesh,       pp) {
     // getFC function set as an interval loop.
     this.actions['getFCInterval'] = setInterval(this.getFC.bind(this), 10);
     
-    // Set up some drawing functions for debugging.
-    drawPoly = function(poly, context, color) {
-      if (typeof color == 'undefined') color = 'black';
-      var self = tagpro.players[tagpro.playerId];
-      // Resize relative to canvas offset and position.
-      // Values from global-game
-      var a = {x: 0, y: 0};
-      var e = 40 / 2; // from tile size 40.
-      var cLeft = Math.round(tagpro.viewPort.source.x / tagpro.zoom) * tagpro.zoom - a.x * tagpro.zoom + e;
-      var cTop = Math.round(tagpro.viewPort.source.y / tagpro.zoom) * tagpro.zoom - a.y * tagpro.zoom + e;
-      function remap(e) {
-        return {
-          x: e.x * (1 / tagpro.zoom) - (self.x - context.canvas.width / 2),
-          y: e.y * (1 / tagpro.zoom) - (self.y - context.canvas.height / 2)
-        }
-      }
-      context.beginPath();
-      var start = remap(poly.getPoint(0));
-      context.moveTo(start.x, start.y);
-      for (var i = 1; i < poly.numpoints; i++) {
-        var nextPoint = remap(poly.getPoint(i));
-        context.lineTo(nextPoint.x, nextPoint.y);
-      }
-      context.lineTo(start.x, start.y);
-      context.lineWidth = 1;
-      context.strokeStyle = color;
-      context.stroke();
-      context.closePath();
-    }
-
-    // Draw outlines on canvas.
-    drawOutline = function(shapes, context) {
-      for (var i = 0; i < shapes.length; i++) {
-        if (shapes[i] instanceof Poly) {
-          drawPoly(shapes[i], context);
-        } else {
-          drawShape(shapes[i], context);
-        }
-      }
-    }
-
-    
-
-    // Store tagpro.ui.draw so we can add to it.
-    var uiDraw = tagpro.ui.draw;
-    
-    // Using ui.draw to display where your bot is headed.
-    tagpro.ui.draw = function(e) {
-      e.save();
-      e.globalAlpha = 1;
-
-      if (window.hasOwnProperty('BotMeshShapes')) {
-        drawOutline(window.BotMeshShapes, e);
-      }
-      
-      // Restore tagpro.ui.draw and apply our changes.
-      return uiDraw.apply(this, arguments);
-    };
     console.log("Bot loaded!");
+    // Set up drawing.
+    this._setDraw();
     this.initialized = true;
   }
 
@@ -141,7 +85,13 @@ function( mapParser,       NavMesh,       pp) {
     }
 
     // Get path.
-    var path = this.navmesh.calculatePath(this._getLocation(), destination);
+    try {
+      var path = this.navmesh.calculatePath(this._getLocation(), destination);
+    } catch(e) {
+      console.warn("Caught: " + e.toString());
+      setTimeout(function() { this.consider(); }.bind(this), 1500);
+      return;
+    }
 
     // get to it!
     this.navigate(path);
@@ -245,39 +195,64 @@ function( mapParser,       NavMesh,       pp) {
   }
 
   // Takes a path and navigates it, assuming a static target right now.
-  Bot.prototype.navigate = function(path) {
+  Bot.prototype.navigate = function(path, iteration) {
+    if (typeof iteration == 'undefined') iteration = 0;
+    iteration++;
+    if (iteration == 10) {
+      try {
+        path = this.navmesh.calculatePath(this._getLocation(), path[path.length - 1]);
+      } catch(e) {
+        console.warn("Caught: " + e.toString());
+        setTimeout(function() { this.consider(); }.bind(this), 1500);
+      }
+    }
     var goal = false;
-    var me = this._getPLocation();
+    var me = this._getLocation();
     // todo: use _getPLocation but remove or handle the possibility of getting points outside of walkable range.
     if (this.self.dead) {
       this._clearInterval('navigateInterval');
       // Consider again after waiting until respawn.
-      setTimeout(function() { this.consider();}.bind(this), 3200);
+      setTimeout(function() { this.consider();}.bind(this), 3500);
     }
+
     // Find next location to seek out in path.
     if (path.length > 0) {
       goal = path[0];
-      if (me.dist(goal) < 15) {
-        if (path.length !== 0) {
-          path.shift();
-          goal = path[0];
+      var cut = false;
+      var last_index = 0;
+      for (var i = 0; i < path.length; i++) {
+        if (this.navmesh.checkVisible(me, path[i])) {
+          goal = path[i];
+          if (i !== 0) {
+            last_index = i;
+            cut = true;
+          }
         } else {
+          break;
+        }
+      }
+      if (cut) {
+        path.splice(0, last_index - 1);
+      }
+      if (path.length == 1) {
+        goal = path[0];
+        if (me.dist(goal) < 20) {
           goal = false;
         }
       }
     }
+    
     // If goal found.
     if (goal) {
+      window.BotGoal = goal;
       // Seek after a little delay so we can finish setup.
       setTimeout(function() {this._seek(goal);}.bind(this), 10);
-      if (!this.actions.hasOwnProperty('navigateInterval')) {
-        this.actions['navigateInterval'] = setInterval(function() {this.navigate(path);}.bind(this), 25);
-      }
+      setTimeout(function() {this.navigate(path, iteration);}.bind(this), 25)
     } else { // goal not found. clean up
       // Break interval and remove property.
-      this._clearInterval('navigateInterval');
-      this.consider();
+      //this._clearInterval('navigateInterval');
       // Todo: notify listeners that goal has been reached.
+      this.consider();
     }
   }
 
@@ -287,6 +262,107 @@ function( mapParser,       NavMesh,       pp) {
       clearInterval(this.actions[name]);
       delete this.actions[name];
     }
+  }
+
+  // Set up drawing functions.
+  Bot.prototype._setDraw = function() {
+    var self = tagpro.players[tagpro.playerId];
+    
+    // Remap a coordinate so that it looks static, similar to the map tiles.
+    function remap(e, context) {
+      return {
+        x: e.x * (1 / tagpro.zoom) - (self.x - context.canvas.width / 2),
+        y: e.y * (1 / tagpro.zoom) - (self.y - context.canvas.height / 2)
+      }
+    }
+    
+    // Given a polygon, context, and color, draw its outline.
+    drawPoly = function(poly, context, color) {
+      if (typeof color == 'undefined') color = 'black';
+      // Resize relative to canvas offset and position.
+      // Values from global-game
+      var a = {x: 0, y: 0};
+      var e = 40 / 2; // from tile size 40.
+      context.beginPath();
+      var start = remap(poly.getPoint(0), context);
+      context.moveTo(start.x, start.y);
+      for (var i = 1; i < poly.numpoints; i++) {
+        var nextPoint = remap(poly.getPoint(i), context);
+        context.lineTo(nextPoint.x, nextPoint.y);
+      }
+      context.lineTo(start.x, start.y);
+      context.lineWidth = 1;
+      context.strokeStyle = color;
+      context.stroke();
+      context.closePath();
+    }
+
+    // Draw multiple shape/polygons on canvas.
+    drawOutline = function(shapes, context) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (shapes[i] instanceof Poly) {
+          drawPoly(shapes[i], context);
+        } else {
+          drawShape(shapes[i], context);
+        }
+      }
+    }
+
+    // Draw a green dot.
+    drawPoint = function(point, context) {
+      point = remap(point, context);
+      var radius = 5;
+      context.beginPath();
+      context.arc(point.x, point.y, radius, 0, 2 * Math.PI, false);
+      context.fillStyle = 'green';
+      context.fill();
+      context.lineWidth = 5;
+      context.strokeStyle = '#003300';
+      context.stroke();
+    }
+
+    // Draw an edge on the canvas.
+    drawLine = function(edge, context, color) {
+      if (typeof color == 'undefined') color = 'black';
+      var p1 = remap(edge.p1, context);
+      var p2 = remap(edge.p2, context);
+      var radius = 5;
+      context.beginPath();
+      context.moveTo(p1.x, p1.y);
+      context.lineTo(p2.x, p2.y);
+      context.lineWidth = 3;
+      context.strokeStyle = color;
+      context.stroke();
+      context.closePath();
+    }
+
+    // Store tagpro.ui.draw so we can add to it.
+    var uiDraw = tagpro.ui.draw;
+    
+    // Using ui.draw to display where your bot is headed.
+    tagpro.ui.draw = function(e) {
+      e.save();
+      e.globalAlpha = 1;
+
+      if (window.hasOwnProperty('BotMeshShapes')) {
+        drawOutline(window.BotMeshShapes, e);
+      }
+
+      if (window.hasOwnProperty('BotGoal')) {
+        drawPoint(window.BotGoal, e);
+      }
+
+      if (window.hasOwnProperty('BotEdge')) {
+        drawLine(window.BotEdge, e, 'red');
+      }
+
+      if (window.hasOwnProperty('BotEdge2')) {
+        drawLine(window.BotEdge2, e, 'green');
+      }
+      
+      // Restore tagpro.ui.draw and apply our changes.
+      return uiDraw.apply(this, arguments);
+    };
   }
   // Get predicted location based on current position and velocity. Returns a Point object.
   // The multiplier argument is optional and specifies how many time steps into the future
