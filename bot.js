@@ -34,8 +34,8 @@ function( mapParser,       NavMesh,       pp) {
     this.initialized = false;
     this.mapInitialized = false;
     this.init();
-    this.processMap();
-    this.consider();
+    setTimeout(this.processMap.bind(this), 50);
+    setTimeout(this.consider.bind(this), 150);
   };
 
   // Initialize functionality dependent on tagpro provisioning playerId.
@@ -65,6 +65,7 @@ function( mapParser,       NavMesh,       pp) {
   Bot.prototype.consider = function() {
     // Ensure everything is initialized.
     if (!this.initialized || !this.mapInitialized) { return setTimeout(function() { this.consider() }.bind(this), 50); }
+    console.log("Considering."); // DEBUG
     // Remove getFC.
     if (this.actions.hasOwnProperty('getFC')) {
       clearInterval(this.actions['getFCInterval'])
@@ -85,10 +86,8 @@ function( mapParser,       NavMesh,       pp) {
     }
 
     // Get path.
-    try {
-      var path = this.navmesh.calculatePath(this._getLocation(), destination);
-    } catch(e) {
-      console.warn("Caught: " + e.toString());
+    var path = this.navmesh.calculatePath(this._getLocation(), destination);
+    if (typeof path == 'undefined') {
       setTimeout(function() { this.consider(); }.bind(this), 1500);
       return;
     }
@@ -196,14 +195,14 @@ function( mapParser,       NavMesh,       pp) {
 
   // Takes a path and navigates it, assuming a static target right now.
   Bot.prototype.navigate = function(path, iteration) {
+    console.log("Navigating."); // DEBUG
     if (typeof iteration == 'undefined') iteration = 0;
     iteration++;
     if (iteration == 10) {
-      try {
-        path = this.navmesh.calculatePath(this._getLocation(), path[path.length - 1]);
-      } catch(e) {
-        console.warn("Caught: " + e.toString());
+      path = this.navmesh.calculatePath(this._getPLocation(), path[path.length - 1]);
+      if (typeof path == 'undefined') {
         setTimeout(function() { this.consider(); }.bind(this), 1500);
+        return;
       }
     }
     var goal = false;
@@ -213,6 +212,7 @@ function( mapParser,       NavMesh,       pp) {
       this._clearInterval('navigateInterval');
       // Consider again after waiting until respawn.
       setTimeout(function() { this.consider();}.bind(this), 3500);
+      return;
     }
 
     // Find next location to seek out in path.
@@ -252,7 +252,7 @@ function( mapParser,       NavMesh,       pp) {
       // Break interval and remove property.
       //this._clearInterval('navigateInterval');
       // Todo: notify listeners that goal has been reached.
-      this.consider();
+      setTimeout(function() { this.consider();}.bind(this), 500);
     }
   }
 
@@ -490,8 +490,8 @@ function( mapParser,       NavMesh,       pp) {
   // Start.
   var bot = new Bot();
 });
- 
- 
+
+
 // Here is a list of player values:
 //
 // a: Unknown.
