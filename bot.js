@@ -4,7 +4,8 @@ requirejs.config({
     'map/clipper': {
       exports: 'ClipperLib'
     }
-  }
+  },
+  waitSeconds: 15
 });
 
 require(['map/parse-map', 'map/navmesh', 'map/polypartition'],
@@ -35,7 +36,7 @@ function( mapParser,       NavMesh,       pp) {
     this.mapInitialized = false;
     this.init();
     setTimeout(this.processMap.bind(this), 50);
-    setTimeout(this.consider.bind(this), 150);
+    //setTimeout(this.consider.bind(this), 150);
   };
 
   // Initialize functionality dependent on tagpro provisioning playerId.
@@ -74,8 +75,24 @@ function( mapParser,       NavMesh,       pp) {
     console.log("Navmesh constructed.");
   }
 
+  // Stops the bot. Sets the stop action which all methods need to check for, and also
+  // ensures the bot stays still (ish).
+  Bot.prototype.stop = function() {
+    this.stopped = true;
+    this.allUp();
+    this._removeDraw();
+  }
+
+  // Restarts the bot.
+  Bot.prototype.start = function() {
+    this.stopped = false;
+    this.consider();
+  }
+
   // Consider the game and take necessary actions.
   Bot.prototype.consider = function() {
+    // Stop if stopped.
+    if (this.stopped) return;
     // Ensure everything is initialized.
     if (!this.initialized || !this.mapInitialized || this.self.dead) { return setTimeout(function() { this.consider() }.bind(this), 50); }
     console.log("Considering."); // DEBUG
@@ -111,16 +128,11 @@ function( mapParser,       NavMesh,       pp) {
 
   // Takes a path and navigates it, assuming a static target right now.
   Bot.prototype.navigate = function(path, iteration) {
-    console.log("Navigating."); // DEBUG
+    //console.log("Navigating."); // DEBUG
+    if (this.stopped) return;
     if (typeof iteration == 'undefined') iteration = 0;
     iteration++;
-    if (iteration >= 10) {
-      path = this.navmesh.calculatePath(this._getPLocation(), path[path.length - 1]);
-      if (typeof path == 'undefined') {
-        setTimeout(function() { this.consider(); }.bind(this), 1500);
-        return;
-      }
-    }
+
     var goal = false;
     var me = this._getLocation();
     // todo: use _getPLocation but remove or handle the possibility of getting points outside of walkable range.
@@ -172,7 +184,18 @@ function( mapParser,       NavMesh,       pp) {
 
       // Apply desired vector after a short delay.
       setTimeout(function() {this._update(desired_vector);}.bind(this), 0);
-      setTimeout(function() {this.navigate(path, iteration);}.bind(this), 25)
+      if (iteration >= 10) {
+        path = this.navmesh.calculatePath(this._getPLocation(), path[path.length - 1]);
+        timeout = 5;
+        if (typeof path == 'undefined') {
+          setTimeout(function() { this.consider(); }.bind(this), 1500);
+          return;
+        }
+        iteration = 0;
+      } else {
+        timeout = 25;
+      }
+      setTimeout(function() {this.navigate(path, iteration);}.bind(this), timeout)
     } else { // goal not found. clean up
       // Break interval and remove property.
       //this._clearInterval('navigateInterval');
@@ -374,6 +397,12 @@ function( mapParser,       NavMesh,       pp) {
     };
   }
 
+  Bot.prototype._removeDraw = function() {
+    delete window.BotGoal;
+    delete window.BotEdge;
+    delete window.BotEdge2;
+  }
+
   // Get predicted location based on current position and velocity. Returns a Point object.
   // The multiplier argument is optional and specifies how many time steps into the future
   // the prediction will be.
@@ -511,6 +540,13 @@ function( mapParser,       NavMesh,       pp) {
     }
   }
 
+  Bot.prototype.allUp = function() {
+    this.sendKey('up', 'keyup');
+    this.sendKey('down', 'keyup');
+    this.sendKey('right', 'keyup');
+    this.sendKey('left', 'keyup');
+  }
+
   // The brain, this holds all your math variables and commands used to chase the enemy FC.
   Bot.prototype.getFC = function() {
     // 'for in' loop to loop through players.
@@ -594,6 +630,21 @@ function( mapParser,       NavMesh,       pp) {
 
   // Start.
   var bot = new Bot();
+  // Set up UI.
+  $('body').append('<div id="bot-ui"></div>');
+  $('#bot-ui').append('<button id="bot-stop">Stop</button>');
+  $('#bot-ui').append('<button id="bot-start">Start</button>');
+  $('#bot-ui').css('position', 'absolute');
+  $('#bot-ui').css('top', '45px');
+  $('#bot-ui').css('left', '25px');
+
+  $('#bot-stop').click(function(e) {
+    bot.stop();
+  });
+  $('#bot-start').click(function(e) {
+    bot.start();
+  });
+
 });
 
 
