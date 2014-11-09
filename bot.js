@@ -61,10 +61,23 @@ function( mapParser,       NavMesh,       pp) {
     this.initialized = true;
   }
 
+  // Process map-related things.
+  Bot.prototype.processMap = function() {
+    if (typeof tagpro !== 'object' || !tagpro.map) {return setTimeout(this.processMap.bind(this), 250);}
+    this.mapTiles = tagpro.map;
+    var polys = mapParser.parse(this.mapTiles);
+    polys = mapParser.convertShapesToPolys(polys);
+    this.navmesh = new NavMesh(polys);
+    this.mapInitialized = true;
+    // for writing on map
+    window.BotMeshShapes = this.navmesh.polys;
+    console.log("Navmesh constructed.");
+  }
+
   // Consider the game and take necessary actions.
   Bot.prototype.consider = function() {
     // Ensure everything is initialized.
-    if (!this.initialized || !this.mapInitialized) { return setTimeout(function() { this.consider() }.bind(this), 50); }
+    if (!this.initialized || !this.mapInitialized || this.self.dead) { return setTimeout(function() { this.consider() }.bind(this), 50); }
     console.log("Considering."); // DEBUG
     // Remove getFC.
     if (this.actions.hasOwnProperty('getFC')) {
@@ -96,17 +109,76 @@ function( mapParser,       NavMesh,       pp) {
     this.navigate(path);
   }
 
-  // Process map-related things.
-  Bot.prototype.processMap = function() {
-    if (typeof tagpro !== 'object' || !tagpro.map) {return setTimeout(this.processMap.bind(this), 250);}
-    this.mapTiles = tagpro.map;
-    var polys = mapParser.parse(this.mapTiles);
-    polys = mapParser.convertShapesToPolys(polys);
-    this.navmesh = new NavMesh(polys);
-    this.mapInitialized = true;
-    // for writing on map
-    window.BotMeshShapes = this.navmesh.polys;
-    console.log("Navmesh constructed.");
+  // Takes a path and navigates it, assuming a static target right now.
+  Bot.prototype.navigate = function(path, iteration) {
+    console.log("Navigating."); // DEBUG
+    if (typeof iteration == 'undefined') iteration = 0;
+    iteration++;
+    if (iteration >= 10) {
+      path = this.navmesh.calculatePath(this._getPLocation(), path[path.length - 1]);
+      if (typeof path == 'undefined') {
+        setTimeout(function() { this.consider(); }.bind(this), 1500);
+        return;
+      }
+    }
+    var goal = false;
+    var me = this._getLocation();
+    // todo: use _getPLocation but remove or handle the possibility of getting points outside of walkable range.
+    if (this.self.dead) {
+      this._clearInterval('navigateInterval');
+      // Consider again after waiting until respawn.
+      setTimeout(function() { this.consider();}.bind(this), 500);
+      return;
+    }
+
+    // Find next location to seek out in path.
+    if (path.length > 0) {
+      goal = path[0];
+      var cut = false;
+      var last_index = 0;
+      for (var i = 0; i < path.length; i++) {
+        if (this.navmesh.checkVisible(me, path[i])) {
+          goal = path[i];
+          if (i !== 0) {
+            last_index = i;
+            cut = true;
+          }
+        } else {
+          break;
+        }
+      }
+      if (cut) {
+        path.splice(0, last_index - 1);
+      }
+      if (path.length == 1) {
+        goal = path[0];
+        if (me.dist(goal) < 20) {
+          goal = false;
+        }
+      }
+    }
+    
+    // If goal found.
+    if (goal) {
+      window.BotGoal = goal;
+
+      // Sum result of each behavior.
+      var desired_vector = new Point(0, 0);
+      desired_vector = desired_vector.add(this._seek(goal));
+      desired_vector = desired_vector.add(this._avoid());
+      if (path.length > 1) {
+        desired_vector = desired_vector.add(this._navpath(goal, path[1]));
+      }
+
+      // Apply desired vector after a short delay.
+      setTimeout(function() {this._update(desired_vector);}.bind(this), 0);
+      setTimeout(function() {this.navigate(path, iteration);}.bind(this), 25)
+    } else { // goal not found. clean up
+      // Break interval and remove property.
+      //this._clearInterval('navigateInterval');
+      // Todo: notify listeners that goal has been reached.
+      setTimeout(function() { this.consider();}.bind(this), 500);
+    }
   }
 
   // The sendKey function, use it by calling "sendKey('direction', 'keyState')".
@@ -190,69 +262,6 @@ function( mapParser,       NavMesh,       pp) {
           } else {player.accY = 0;}
         }
       }
-    }
-  }
-
-  // Takes a path and navigates it, assuming a static target right now.
-  Bot.prototype.navigate = function(path, iteration) {
-    console.log("Navigating."); // DEBUG
-    if (typeof iteration == 'undefined') iteration = 0;
-    iteration++;
-    if (iteration == 10) {
-      path = this.navmesh.calculatePath(this._getPLocation(), path[path.length - 1]);
-      if (typeof path == 'undefined') {
-        setTimeout(function() { this.consider(); }.bind(this), 1500);
-        return;
-      }
-    }
-    var goal = false;
-    var me = this._getLocation();
-    // todo: use _getPLocation but remove or handle the possibility of getting points outside of walkable range.
-    if (this.self.dead) {
-      this._clearInterval('navigateInterval');
-      // Consider again after waiting until respawn.
-      setTimeout(function() { this.consider();}.bind(this), 3500);
-      return;
-    }
-
-    // Find next location to seek out in path.
-    if (path.length > 0) {
-      goal = path[0];
-      var cut = false;
-      var last_index = 0;
-      for (var i = 0; i < path.length; i++) {
-        if (this.navmesh.checkVisible(me, path[i])) {
-          goal = path[i];
-          if (i !== 0) {
-            last_index = i;
-            cut = true;
-          }
-        } else {
-          break;
-        }
-      }
-      if (cut) {
-        path.splice(0, last_index - 1);
-      }
-      if (path.length == 1) {
-        goal = path[0];
-        if (me.dist(goal) < 20) {
-          goal = false;
-        }
-      }
-    }
-    
-    // If goal found.
-    if (goal) {
-      window.BotGoal = goal;
-      // Seek after a little delay so we can finish setup.
-      setTimeout(function() {this._seek(goal);}.bind(this), 10);
-      setTimeout(function() {this.navigate(path, iteration);}.bind(this), 25)
-    } else { // goal not found. clean up
-      // Break interval and remove property.
-      //this._clearInterval('navigateInterval');
-      // Todo: notify listeners that goal has been reached.
-      setTimeout(function() { this.consider();}.bind(this), 500);
     }
   }
 
@@ -364,12 +373,12 @@ function( mapParser,       NavMesh,       pp) {
       return uiDraw.apply(this, arguments);
     };
   }
+
   // Get predicted location based on current position and velocity. Returns a Point object.
   // The multiplier argument is optional and specifies how many time steps into the future
   // the prediction will be.
-  // todo: handle obstacles.
   Bot.prototype._getPLocation = function(multiplier) {
-    if (typeof multiplier === 'undefined') multiplier = 60;
+    if (typeof multiplier == 'undefined') multiplier = 60;
     var selfX = this.self.x + this.self.lx * multiplier;
     var selfY = this.self.y + this.self.ly * multiplier;
     return new Point(selfX, selfY);
@@ -380,24 +389,120 @@ function( mapParser,       NavMesh,       pp) {
     return new Point(this.self.x, this.self.y);
   }
 
+  // Get current velocity as a point vector.
+  Bot.prototype._getVector = function(multiplier) {
+    if (typeof multiplier == 'undefined') multiplier = 60;
+    return new Point(this.self.lx * multiplier, this.self.ly * multiplier);
+  }
+
   // Function for approaching a static target from the current position.
   // Does not handle obstacles.
   Bot.prototype._seek = function(target) {
     // Get your predicted position using location + speed * 60.
-    var selfX = this.self.x + this.self.lx*60;
-    var selfY = this.self.y + this.self.ly*60;
-        
+    var prediction = this._getPLocation();
+
+    var vector = new Point(0, 0);
+    
     // If their predicted x location is less than yours, move left. Else move right.
-    if (target.x < selfX) {
+    if (target.x < prediction.x) {
+      vector.x = -10;
+    } else {
+      vector.x = 10;
+    }
+    
+    // If their predicted y location is less than yours, move up. Else move down.
+    if (target.y < prediction.y) {
+      vector.y = -10;
+    } else {
+      vector.y = 10;
+    }
+    return vector;
+  }
+
+  // Move such that it is more likely the next point along the path will appear.
+  // Takes in the current goal and the next point.
+  Bot.prototype._navpath = function(goal, next) {
+    var WEIGHT = 10;
+    var desired = new Point(0, 0);
+    var current = this._getLocation();
+    var diff = current.sub(goal).normalize();
+    if (Math.abs(diff.y) > Math.abs(diff.x)) {
+      desired.x = diff.x * WEIGHT;
+    } else {
+      desired.y = diff.y * WEIGHT;
+    }
+    return desired;
+  }
+
+  // Returns a desired direction vector for avoiding spikes.
+  Bot.prototype._avoid = function() {
+    lineIntersectsCircle = function(ahead, ahead2, p, radius) {
+      if (typeof radius == 'undefined') radius = 24; // spike radius + ball radius + 1
+      return (ahead.dist(p) <= radius || ahead2.dist(p) <= radius);
+    }.bind(this);
+
+    findMostThreateningObstacle = function() {
+      var mostThreatening = null;
+      var spikelocations = this.getspikes();
+      for (var i = 0; i < spikelocations.length; i++) {
+        var spike = spikelocations[i];
+        var collision = lineIntersectsCircle(ahead, ahead2, spike);
+
+        if (collision && (mostThreatening == null || position.dist(spike) < position.dist(mostThreatening))) {
+          mostThreatening = spike;
+        }
+      }
+      return mostThreatening;
+    }.bind(this);
+
+    var MAX_SEE_AHEAD = 5;
+    var MAX_AVOID_FORCE = 10;
+    var ahead = this._getPLocation(MAX_SEE_AHEAD);
+    var ahead2 = ahead.mul(0.5);
+    var position = this._getLocation();
+    var mostThreatening = findMostThreateningObstacle();
+    var avoidance = new Point(0, 0);
+
+    if (mostThreatening) {
+      avoidance.x = ahead.x - mostThreatening.x;
+      avoidance.y = ahead.y - mostThreatening.y;
+      avoidance = avoidance.normalize();
+      avoidance = avoidance.mul(MAX_AVOID_FORCE);
+    }
+    return avoidance;
+  }
+
+  Bot.prototype.getspikes = function() {
+    if (this.hasOwnProperty(spikes)) {
+      return this.spikes;
+    } else {
+      var spikes = new Array();
+      for (column in tagpro.map) {
+        for (tile in tagpro.map[column]) {
+          if (tagpro.map[column][tile] == 7) {
+            spikes.push(new Point(40 * column, 40 * tile));
+          }
+        }
+      }
+      this.spikes = spikes;
+      return spikes;
+    }
+  }
+
+  // This function takes in a point representing a desired direction vector and presses
+  // the keys necessary to meet that vector, if needed.
+  // todo: add threshold for more fine-grained control, 
+  Bot.prototype._update = function(vec) {
+    var current = this._getVector(1);
+    if (vec.x < current.x) {
       this.sendKey('right', 'keyup');
       this.sendKey('left', 'keydown');
     } else {
       this.sendKey('left', 'keyup');
       this.sendKey('right', 'keydown');
     }
-    
-    // If their predicted y location is less than yours, move up. Else move down.
-    if (target.y < selfY) {
+
+    if (vec.y < current.y) {
       this.sendKey('down', 'keyup');
       this.sendKey('up', 'keydown');
     } else {
