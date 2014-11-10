@@ -13,7 +13,7 @@ function( mapParser,       NavMesh,       pp) {
   // Alias useful classes.
   var Point = pp.Point;
   var Poly = pp.Poly;
-  console.log("Bot Loading.");
+  var Edge = pp.Edge;
 
   // A Bot is responsible for decision making, navigation (with the aid of map-related modules)
   // and low-level steering/locomotion.
@@ -29,7 +29,7 @@ function( mapParser,       NavMesh,       pp) {
     // This is to detect key releases. Both real key releases and the bots. This is needed so we don't mess up the simPressed object.
     document.onkeyup = this._keyUpdateFunc(false);
 
-    this.destination = {x: undefined, y: undefined};
+    // Holds interval ids.
     this.actions = {};
 
     this.initialized = false;
@@ -42,21 +42,19 @@ function( mapParser,       NavMesh,       pp) {
   // Initialize functionality dependent on tagpro provisioning playerId.
   Bot.prototype.init = function() {
     console.log("Trying init.");
+    // Ensure that the tagpro global object has initialized and allocated us an id.
     if (typeof tagpro !== 'object' || !tagpro.playerId) {return setTimeout(this.init.bind(this), 250);}
 
     // self is your player object.
     this.self = tagpro.players[tagpro.playerId];
     window.self = this.self;
-    window.destination = this.destination;
     this.playerId = tagpro.playerId;
 
     // getAcc function set as an interval loop.
     this.actions['accInterval'] = setInterval(this.getAcc.bind(this), 10);
-
-    // getFC function set as an interval loop.
-    this.actions['getFCInterval'] = setInterval(this.getFC.bind(this), 10);
     
     console.log("Bot loaded!");
+    
     // Set up drawing.
     this._setDraw();
     this.initialized = true;
@@ -64,6 +62,7 @@ function( mapParser,       NavMesh,       pp) {
 
   // Process map-related things.
   Bot.prototype.processMap = function() {
+    // Ensure that the tagpro global object has initialized and allocated us an id.
     if (typeof tagpro !== 'object' || !tagpro.map) {return setTimeout(this.processMap.bind(this), 250);}
     this.mapTiles = tagpro.map;
     var polys = mapParser.parse(this.mapTiles);
@@ -91,16 +90,11 @@ function( mapParser,       NavMesh,       pp) {
 
   // Consider the game and take necessary actions.
   Bot.prototype.consider = function() {
-    // Stop if stopped.
+    // Don't execute function if bot is stopped.
     if (this.stopped) return;
+
     // Ensure everything is initialized.
     if (!this.initialized || !this.mapInitialized || this.self.dead) { return setTimeout(function() { this.consider() }.bind(this), 50); }
-    console.log("Considering."); // DEBUG
-    // Remove getFC.
-    if (this.actions.hasOwnProperty('getFC')) {
-      clearInterval(this.actions['getFCInterval'])
-      delete this.actions['getFCInterval'];
-    }
 
     // First, just get enemy flag location, set it as destination, find path to it, go get it, return to base
     var enemyFlagPoint = this.findEnemyFlag();
@@ -117,19 +111,23 @@ function( mapParser,       NavMesh,       pp) {
 
     // Get path.
     var path = this.navmesh.calculatePath(this._getLocation(), destination);
+
+    // Retry if path not found.
     if (typeof path == 'undefined') {
       setTimeout(function() { this.consider(); }.bind(this), 1500);
       return;
     }
 
-    // get to it!
+    // Navigate the path.
     this.navigate(path);
   }
 
   // Takes a path and navigates it, assuming a static target right now.
   Bot.prototype.navigate = function(path, iteration) {
-    //console.log("Navigating."); // DEBUG
+    // Don't execute function if bot is stopped.
     if (this.stopped) return;
+
+    // Set iteration
     if (typeof iteration == 'undefined') iteration = 0;
     iteration++;
 
@@ -137,7 +135,7 @@ function( mapParser,       NavMesh,       pp) {
     var me = this._getLocation();
     // todo: use _getPLocation but remove or handle the possibility of getting points outside of walkable range.
     if (this.self.dead) {
-      this._clearInterval('navigateInterval');
+      //this._clearInterval('navigateInterval');
       // Consider again after waiting until respawn.
       setTimeout(function() { this.consider();}.bind(this), 500);
       return;
@@ -173,19 +171,26 @@ function( mapParser,       NavMesh,       pp) {
     // If goal found.
     if (goal) {
       window.BotGoal = goal;
+      window.BotVectors = [];
 
       // Sum result of each behavior.
       var desired_vector = new Point(0, 0);
-      desired_vector = desired_vector.add(this._seek(goal));
-      desired_vector = desired_vector.add(this._avoid());
+      var seek_vec = this._seek(goal);
+      desired_vector = desired_vector.add(seek_vec);
+      var avoid_vec = this._avoid();
+      desired_vector = desired_vector.add(avoid_vec);
       if (path.length > 1) {
-        desired_vector = desired_vector.add(this._navpath(goal, path[1]));
+        var nav_vec = this._navpath(goal, path[1]);
+        desired_vector = desired_vector.add(nav_vec);
+        window.BotVectors.push({edge: new Edge(me, me.add(nav_vec)), color: 'blue'});
       }
+      window.BotVectors.push({edge: new Edge(me, me.add(seek_vec)), color: 'green'});
+      window.BotVectors.push({edge: new Edge(me, me.add(avoid_vec)), color: 'red'});
 
       // Apply desired vector after a short delay.
       setTimeout(function() {this._update(desired_vector);}.bind(this), 0);
       if (iteration >= 10) {
-        path = this.navmesh.calculatePath(this._getPLocation(), path[path.length - 1]);
+        path = this.navmesh.calculatePath(this._getLocation(), path[path.length - 1]);
         timeout = 5;
         if (typeof path == 'undefined') {
           setTimeout(function() { this.consider(); }.bind(this), 1500);
@@ -391,6 +396,12 @@ function( mapParser,       NavMesh,       pp) {
       if (window.hasOwnProperty('BotEdge2')) {
         drawLine(window.BotEdge2, e, 'green');
       }
+
+      if (window.hasOwnProperty('BotVectors')) {
+        window.BotVectors.forEach(function(bv) {
+          drawLine(bv.edge, e, bv.color);
+        });
+      }
       
       // Restore tagpro.ui.draw and apply our changes.
       return uiDraw.apply(this, arguments);
@@ -401,6 +412,7 @@ function( mapParser,       NavMesh,       pp) {
     delete window.BotGoal;
     delete window.BotEdge;
     delete window.BotEdge2;
+    delete window.BotVectors;
   }
 
   // Get predicted location based on current position and velocity. Returns a Point object.
@@ -427,25 +439,15 @@ function( mapParser,       NavMesh,       pp) {
   // Function for approaching a static target from the current position.
   // Does not handle obstacles.
   Bot.prototype._seek = function(target) {
-    // Get your predicted position using location + speed * 60.
-    var prediction = this._getPLocation();
+    var MAX_VELOCITY = 60;
 
-    var vector = new Point(0, 0);
-    
-    // If their predicted x location is less than yours, move left. Else move right.
-    if (target.x < prediction.x) {
-      vector.x = -10;
-    } else {
-      vector.x = 10;
-    }
-    
-    // If their predicted y location is less than yours, move up. Else move down.
-    if (target.y < prediction.y) {
-      vector.y = -10;
-    } else {
-      vector.y = 10;
-    }
-    return vector;
+    // Get your predicted position using location + speed * 60.
+    var prediction = this._getPLocation(5);
+
+    var steering = new Point(0, 0);
+    var desired_velocity = target.sub(prediction).normalize().mul(MAX_VELOCITY);
+    steering = desired_velocity.sub(this._getVector(5));
+    return steering;
   }
 
   // Move such that it is more likely the next point along the path will appear.
@@ -454,11 +456,19 @@ function( mapParser,       NavMesh,       pp) {
     var WEIGHT = 10;
     var desired = new Point(0, 0);
     var current = this._getLocation();
-    var diff = current.sub(goal).normalize();
-    if (Math.abs(diff.y) > Math.abs(diff.x)) {
-      desired.x = diff.x * WEIGHT;
-    } else {
-      desired.y = diff.y * WEIGHT;
+    var offsets = [
+      new Point(5, 0), // right
+      new Point(0, 5), // down
+      new Point(-5, 0), // left
+      new Point(0, -5) // up
+    ];
+    var goal_offsets = offsets.map(goal.add);
+    for (var i = 0; i < goal_offsets.length; i++) {
+      var offset = goal_offsets[i];
+      // Next point is visible from this new point.
+      if (this.navmesh.checkVisible(offset, next)) {
+        desired = desired.add(offsets[i].mul(WEIGHT));
+      }
     }
     return desired;
   }
@@ -545,47 +555,6 @@ function( mapParser,       NavMesh,       pp) {
     this.sendKey('down', 'keyup');
     this.sendKey('right', 'keyup');
     this.sendKey('left', 'keyup');
-  }
-
-  // The brain, this holds all your math variables and commands used to chase the enemy FC.
-  Bot.prototype.getFC = function() {
-    // 'for in' loop to loop through players.
-    for (var id in tagpro.players) {
-      if (tagpro.players.hasOwnProperty(id)) {
-        
-        // Defining player to make things easy to read.
-        var player = tagpro.players[id];
-        
-        // If a player is in view and not on your team and has the yellow flag...
-        if (player.draw && player.team !== this.self.team && player.flag == 3) {
-          
-          // Get your predicted position using location + speed * 60.
-          var selfX = this.self.x + this.self.lx*60,
-            selfY = this.self.y + this.self.ly*60;
-          
-          // Get enemy's predicted position using location + speed * 60 + keypresses.
-          this.destination = {x: player.x + player.lx*60 + player.accX, y: player.y + player.ly*60 + player.accY};
-          
-          // If their predicted x location is less than yours, move left. Else move right.
-          if (this.destination.x < selfX) {
-            this.sendKey('right', 'keyup');
-            this.sendKey('left', 'keydown');
-          } else {
-            this.sendKey('left', 'keyup');
-            this.sendKey('right', 'keydown');
-          }
-          
-          // If their predicted y location is less than yours, move up. Else move down.
-          if (this.destination.y < selfY) {
-            this.sendKey('down', 'keyup');
-            this.sendKey('up', 'keydown');
-          } else {
-            this.sendKey('up', 'keyup');
-            this.sendKey('down', 'keydown');
-          }
-        }
-      }
-    }
   }
 
   // This returns a callback function to update keys being pressed for document key listener event.
