@@ -100,13 +100,20 @@ function( mapParser,       NavMesh,       pp) {
     var enemyFlagPoint = this.findEnemyFlag();
     var ownFlagPoint = this.findOwnFlag();
 
-    var destination;
-    // Check if I have the flag.
+    var destination, finish_fn;
+    // Check if I have flag.
     var iHaveFlag = this.self.flag;
+    // Set destination and end condition.
     if (iHaveFlag) {
       destination = ownFlagPoint;
+      finish_fn = function(bot) {
+        return !bot.self.flag;
+      }
     } else {
       destination = enemyFlagPoint;
+      finish_fn = function(bot) {
+        return bot.self.flag;
+      }
     }
 
     // Get path.
@@ -119,11 +126,16 @@ function( mapParser,       NavMesh,       pp) {
     }
 
     // Navigate the path.
-    this.navigate(path);
+    this.navigate(path, finish_fn);
   }
 
   // Takes a path and navigates it, assuming a static target right now.
-  Bot.prototype.navigate = function(path, iteration) {
+  // Path is an array of points representing points that the bot must get to
+  // reconsider is a function that, when true, stops the current navigation
+  // cycle and calls consider. It should be called with 'this'
+  // iteration is a parameter used by the function itself to track how many
+  // cycles have been completed, used for recomputing the path.
+  Bot.prototype.navigate = function(path, reconsider, iteration) {
     // Don't execute function if bot is stopped.
     if (this.stopped) return;
 
@@ -138,6 +150,11 @@ function( mapParser,       NavMesh,       pp) {
       //this._clearInterval('navigateInterval');
       // Consider again after waiting until respawn.
       setTimeout(function() { this.consider();}.bind(this), 500);
+      return;
+    }
+
+    if (reconsider(this)) {
+      setTimeout(function() { this.consider();}.bind(this), 10);
       return;
     }
 
@@ -179,28 +196,28 @@ function( mapParser,       NavMesh,       pp) {
       desired_vector = desired_vector.add(seek_vec);
       var avoid_vec = this._avoid();
       desired_vector = desired_vector.add(avoid_vec);
-      if (path.length > 1) {
+      /*if (path.length > 1) {
         var nav_vec = this._navpath(goal, path[1]);
         desired_vector = desired_vector.add(nav_vec);
         window.BotVectors.push({edge: new Edge(me, me.add(nav_vec)), color: 'blue'});
-      }
+      }*/
       window.BotVectors.push({edge: new Edge(me, me.add(seek_vec)), color: 'green'});
       window.BotVectors.push({edge: new Edge(me, me.add(avoid_vec)), color: 'red'});
 
       // Apply desired vector after a short delay.
       setTimeout(function() {this._update(desired_vector);}.bind(this), 0);
-      if (iteration >= 10) {
+      if (iteration >= 50) {
         path = this.navmesh.calculatePath(this._getLocation(), path[path.length - 1]);
-        timeout = 5;
+        timeout = 0;
         if (typeof path == 'undefined') {
           setTimeout(function() { this.consider(); }.bind(this), 1500);
           return;
         }
         iteration = 0;
       } else {
-        timeout = 25;
+        timeout = 0;
       }
-      setTimeout(function() {this.navigate(path, iteration);}.bind(this), timeout)
+      setTimeout(function() {this.navigate(path, reconsider, iteration);}.bind(this), timeout)
     } else { // goal not found. clean up
       // Break interval and remove property.
       //this._clearInterval('navigateInterval');
@@ -346,12 +363,13 @@ function( mapParser,       NavMesh,       pp) {
     }
 
     // Draw a green dot.
-    drawPoint = function(point, context) {
+    drawPoint = function(point, context, color) {
+      if (color == 'undefined') color = 'green';
       point = remap(point, context);
       var radius = 5;
       context.beginPath();
       context.arc(point.x, point.y, radius, 0, 2 * Math.PI, false);
-      context.fillStyle = 'green';
+      context.fillStyle = color;
       context.fill();
       context.lineWidth = 5;
       context.strokeStyle = '#003300';
@@ -389,17 +407,23 @@ function( mapParser,       NavMesh,       pp) {
         drawPoint(window.BotGoal, e);
       }
 
-      if (window.hasOwnProperty('BotEdge')) {
+      /*if (window.hasOwnProperty('BotEdge')) {
         drawLine(window.BotEdge, e, 'red');
-      }
+      }*/
 
       if (window.hasOwnProperty('BotEdge2')) {
-        drawLine(window.BotEdge2, e, 'green');
+        drawLine(window.BotEdge2, e, 'orange');
       }
 
       if (window.hasOwnProperty('BotVectors')) {
         window.BotVectors.forEach(function(bv) {
           drawLine(bv.edge, e, bv.color);
+        });
+      }
+
+      if (window.hasOwnProperty('spikes')) {
+        window.spikes.forEach(function(s) {
+          drawPoint(s, e, 'red');
         });
       }
       
@@ -437,9 +461,8 @@ function( mapParser,       NavMesh,       pp) {
   }
 
   // Function for approaching a static target from the current position.
-  // Does not handle obstacles.
   Bot.prototype._seek = function(target) {
-    var MAX_VELOCITY = 60;
+    var MAX_VELOCITY = 30;
 
     // Get your predicted position using location + speed * 60.
     var prediction = this._getPLocation(5);
@@ -475,31 +498,62 @@ function( mapParser,       NavMesh,       pp) {
 
   // Returns a desired direction vector for avoiding spikes.
   Bot.prototype._avoid = function() {
-    lineIntersectsCircle = function(ahead, ahead2, p, radius) {
-      if (typeof radius == 'undefined') radius = 24; // spike radius + ball radius + 1
-      return (ahead.dist(p) <= radius || ahead2.dist(p) <= radius);
+    // If the ray intersects the circle, the distance to the intersection
+    // along the ray is returned, otherwise false is returned.
+    // p - point defining start of ray
+    // ray - unit vector extending from p
+    // c - point defining center of circle
+    // radius [optional] - radius of circle
+    lineIntersectsCircle = function(p, ray, c, radius) {
+      if (typeof radius == 'undefined') radius = 55;//45; // spike radius + ball radius + 1
+      var vpc = c.sub(p);
+      if (c.dot(ray) < 0) { // circle behind p
+        if (vpc.len() > radius) {
+          return false;
+        } else {
+          return true;
+        }
+      } else { // circle ahead of p
+        // Projection of center point onto ray.
+        var pc = p.add(ray.mul(ray.dot(vpc) / ray.len()));
+        // Length from c to its projection on the ray.
+        var len_c_pc = c.sub(pc).len();
+        console.log("Distance: " + len_c_pc);
+        if (len_c_pc > radius) {
+          return false;
+        } else { // It intersects, but where?
+          var len_intersection = Math.sqrt(len_c_pc * len_c_pc + radius * radius);
+          return pc.dist(p) - len_intersection;
+        }
+      }
     }.bind(this);
 
-    findMostThreateningObstacle = function() {
+    // Takes a position and a vector looking ahead of the position. Returns
+    // the closest obstacle that intersects with lookahead.
+    findMostThreateningObstacle = function(pos, lookahead) {
       var mostThreatening = null;
       var spikelocations = this.getspikes();
+      var ray = lookahead.sub(pos).normalize();
+      // Length looking ahead.
+      var dist_ahead = lookahead.dist(pos);
       for (var i = 0; i < spikelocations.length; i++) {
         var spike = spikelocations[i];
-        var collision = lineIntersectsCircle(ahead, ahead2, spike);
+        var collision = lineIntersectsCircle(pos, ray, spike);
 
-        if (collision && (mostThreatening == null || position.dist(spike) < position.dist(mostThreatening))) {
+        if (collision && collision < dist_ahead && (mostThreatening == null || pos.dist(spike) < pos.dist(mostThreatening))) {
           mostThreatening = spike;
         }
       }
       return mostThreatening;
     }.bind(this);
 
-    var MAX_SEE_AHEAD = 5;
-    var MAX_AVOID_FORCE = 10;
-    var ahead = this._getPLocation(MAX_SEE_AHEAD);
-    var ahead2 = ahead.mul(0.5);
+    var MAX_SEE_AHEAD = 30;
+    var MAX_AVOID_FORCE = 75;
+    // Ray with current position as basis.
     var position = this._getLocation();
-    var mostThreatening = findMostThreateningObstacle();
+    var ahead = this._getPLocation(MAX_SEE_AHEAD);
+    window.BotEdge2 = new Edge(position, ahead);
+    var mostThreatening = findMostThreateningObstacle(position, ahead);
     var avoidance = new Point(0, 0);
 
     if (mostThreatening) {
@@ -512,7 +566,7 @@ function( mapParser,       NavMesh,       pp) {
   }
 
   Bot.prototype.getspikes = function() {
-    if (this.hasOwnProperty(spikes)) {
+    if (this.hasOwnProperty('spikes')) {
       return this.spikes;
     } else {
       var spikes = new Array();
@@ -524,6 +578,7 @@ function( mapParser,       NavMesh,       pp) {
         }
       }
       this.spikes = spikes;
+      window.spikes = spikes;
       return spikes;
     }
   }
@@ -613,6 +668,7 @@ function( mapParser,       NavMesh,       pp) {
   $('#bot-start').click(function(e) {
     bot.start();
   });
+  window.myBot = bot;
 
 });
 
