@@ -8,8 +8,8 @@ requirejs.config({
   waitSeconds: 15
 });
 
-require(['map/parse-map', 'map/navmesh', 'map/polypartition'],
-function( mapParser,       NavMesh,       pp) {
+require(['map/parse-map', 'map/navmesh', 'map/polypartition', 'drawutils'],
+function( mapParser,       NavMesh,       pp,                  DrawUtils) {
   // Alias useful classes.
   var Point = pp.Point;
   var Poly = pp.Poly;
@@ -56,7 +56,15 @@ function( mapParser,       NavMesh,       pp) {
     console.log("Bot loaded!");
     
     // Set up drawing.
-    this._setDraw();
+    this.draw = new DrawUtils();
+
+    // Register items to draw.
+    this.draw.register("BotMeshShapes");
+    this.draw.register("BotGoal");
+    this.draw.register("BotEdge2");
+    this.draw.register("BotVectors");
+    this.draw.register("BotEdge");
+
     this.initialized = true;
   }
 
@@ -69,8 +77,12 @@ function( mapParser,       NavMesh,       pp) {
     polys = mapParser.convertShapesToPolys(polys);
     this.navmesh = new NavMesh(polys);
     this.mapInitialized = true;
-    // for writing on map
-    window.BotMeshShapes = this.navmesh.polys;
+
+    // For drawing mesh.
+    var mesh_items = this.navmesh.polys.map(function(poly) {
+      return {item: poly, color: 'black'}
+    });
+    window.BotMeshShapes = mesh_items;
     console.log("Navmesh constructed.");
   }
 
@@ -201,8 +213,8 @@ function( mapParser,       NavMesh,       pp) {
         desired_vector = desired_vector.add(nav_vec);
         window.BotVectors.push({edge: new Edge(me, me.add(nav_vec)), color: 'blue'});
       }*/
-      window.BotVectors.push({edge: new Edge(me, me.add(seek_vec)), color: 'green'});
-      window.BotVectors.push({edge: new Edge(me, me.add(avoid_vec)), color: 'red'});
+      window.BotVectors.push({item: new Edge(me, me.add(seek_vec)), color: 'green'});
+      window.BotVectors.push({item: new Edge(me, me.add(avoid_vec)), color: 'red'});
 
       // Apply desired vector after a short delay.
       setTimeout(function() {this._update(desired_vector);}.bind(this), 0);
@@ -316,120 +328,6 @@ function( mapParser,       NavMesh,       pp) {
       clearInterval(this.actions[name]);
       delete this.actions[name];
     }
-  }
-
-  // Set up drawing functions.
-  Bot.prototype._setDraw = function() {
-    var self = tagpro.players[tagpro.playerId];
-    
-    // Remap a coordinate so that it looks static, similar to the map tiles.
-    function remap(e, context) {
-      return {
-        x: e.x * (1 / tagpro.zoom) - (self.x - context.canvas.width / 2),
-        y: e.y * (1 / tagpro.zoom) - (self.y - context.canvas.height / 2)
-      }
-    }
-    
-    // Given a polygon, context, and color, draw its outline.
-    drawPoly = function(poly, context, color) {
-      if (typeof color == 'undefined') color = 'black';
-      // Resize relative to canvas offset and position.
-      // Values from global-game
-      var a = {x: 0, y: 0};
-      var e = 40 / 2; // from tile size 40.
-      context.beginPath();
-      var start = remap(poly.getPoint(0), context);
-      context.moveTo(start.x, start.y);
-      for (var i = 1; i < poly.numpoints; i++) {
-        var nextPoint = remap(poly.getPoint(i), context);
-        context.lineTo(nextPoint.x, nextPoint.y);
-      }
-      context.lineTo(start.x, start.y);
-      context.lineWidth = 1;
-      context.strokeStyle = color;
-      context.stroke();
-      context.closePath();
-    }
-
-    // Draw multiple shape/polygons on canvas.
-    drawOutline = function(shapes, context) {
-      for (var i = 0; i < shapes.length; i++) {
-        if (shapes[i] instanceof Poly) {
-          drawPoly(shapes[i], context);
-        } else {
-          drawShape(shapes[i], context);
-        }
-      }
-    }
-
-    // Draw a green dot.
-    drawPoint = function(point, context, color) {
-      if (color == 'undefined') color = 'green';
-      point = remap(point, context);
-      var radius = 5;
-      context.beginPath();
-      context.arc(point.x, point.y, radius, 0, 2 * Math.PI, false);
-      context.fillStyle = color;
-      context.fill();
-      context.lineWidth = 5;
-      context.strokeStyle = '#003300';
-      context.stroke();
-    }
-
-    // Draw an edge on the canvas.
-    drawLine = function(edge, context, color) {
-      if (typeof color == 'undefined') color = 'black';
-      var p1 = remap(edge.p1, context);
-      var p2 = remap(edge.p2, context);
-      var radius = 5;
-      context.beginPath();
-      context.moveTo(p1.x, p1.y);
-      context.lineTo(p2.x, p2.y);
-      context.lineWidth = 3;
-      context.strokeStyle = color;
-      context.stroke();
-      context.closePath();
-    }
-
-    // Store tagpro.ui.draw so we can add to it.
-    var uiDraw = tagpro.ui.draw;
-    
-    // Using ui.draw to display where your bot is headed.
-    tagpro.ui.draw = function(e) {
-      e.save();
-      e.globalAlpha = 1;
-
-      if (window.hasOwnProperty('BotMeshShapes')) {
-        drawOutline(window.BotMeshShapes, e);
-      }
-
-      if (window.hasOwnProperty('BotGoal')) {
-        drawPoint(window.BotGoal, e);
-      }
-
-      /*if (window.hasOwnProperty('BotEdge')) {
-        drawLine(window.BotEdge, e, 'red');
-      }*/
-
-      if (window.hasOwnProperty('BotEdge2')) {
-        drawLine(window.BotEdge2, e, 'orange');
-      }
-
-      if (window.hasOwnProperty('BotVectors')) {
-        window.BotVectors.forEach(function(bv) {
-          drawLine(bv.edge, e, bv.color);
-        });
-      }
-
-      if (window.hasOwnProperty('spikes')) {
-        window.spikes.forEach(function(s) {
-          drawPoint(s, e, 'red');
-        });
-      }
-      
-      // Restore tagpro.ui.draw and apply our changes.
-      return uiDraw.apply(this, arguments);
-    };
   }
 
   Bot.prototype._removeDraw = function() {
@@ -625,14 +523,16 @@ function( mapParser,       NavMesh,       pp) {
     }.bind(this);
   }
 
-  // Get enemy flag coordinates. todo: differentiate between present and non-present flag.
+  // Get enemy flag coordinates. An object is returned with properties point and present.
+  // if flag is present at point then it will be set to true. If no flag is found, then
+  // 
   Bot.prototype.findEnemyFlag = function() {
     // Get flag value.
     var flagval = (this.self.team + 2 == 4) ? 3 : 4;
     for (column in tagpro.map) {
       for (tile in tagpro.map[column]) {
         if (tagpro.map[column][tile] == flagval || tagpro.map[column][tile] == flagval+0.1) {
-          return new Point(40 * column, 40 * tile);
+          return new Point(40 * column, 40 * tile);;
         }
       }
     }
@@ -650,6 +550,25 @@ function( mapParser,       NavMesh,       pp) {
       }
     }
     return null;
+  }
+
+  Bot.prototype.findYellowFlag = function() {
+    var flagval = 16;
+    for (column in tagpro.map) {
+      for (tile in tagpro.map[column]) {
+        if (tagpro.map[column][tile] == flagval || tagpro.map[column][tile] == flagval+0.1) {
+          return new Point(40 * column, 40 * tile);;
+        }
+      }
+    }
+    return null;
+  }
+
+  // Identify the game time, whether capture the flag or yellow flag.
+  // Returns either "ctf" or "yf".
+  Bot.prototype._getGameType = function() {
+    if (this.findOwnFlag && this.findEnemyFlag) return "ctf";
+
   }
 
   // Start.
