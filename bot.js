@@ -36,7 +36,6 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     this.mapInitialized = false;
     this.init();
     setTimeout(this.processMap.bind(this), 50);
-    //setTimeout(this.consider.bind(this), 150);
   };
 
   // Initialize functionality dependent on tagpro provisioning playerId.
@@ -53,6 +52,9 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     // getAcc function set as an interval loop.
     this.actions['accInterval'] = setInterval(this.getAcc.bind(this), 10);
     
+    // Get game type, either ctf or yf.
+    this.game_type = this._getGameType();
+
     console.log("Bot loaded!");
     
     // Set up drawing.
@@ -108,37 +110,53 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     // Ensure everything is initialized.
     if (!this.initialized || !this.mapInitialized || this.self.dead) { return setTimeout(function() { this.consider() }.bind(this), 50); }
 
-    // First, just get enemy flag location, set it as destination, find path to it, go get it, return to base
-    var enemyFlagPoint = this.findEnemyFlag();
-    var ownFlagPoint = this.findOwnFlag();
+    if (this.game_type == "ctf") {
+      // First, just get enemy flag location, set it as destination, find path to it, go get it, return to base
+      var enemyFlagPoint = this.findEnemyFlag();
+      var ownFlagPoint = this.findOwnFlag();
 
-    var destination, finish_fn;
-    // Check if I have flag.
-    var iHaveFlag = this.self.flag;
-    // Set destination and end condition.
-    if (iHaveFlag) {
-      destination = ownFlagPoint;
-      finish_fn = function(bot) {
-        return !bot.self.flag;
+      var destination, finish_fn;
+      // Check if I have flag.
+      var iHaveFlag = this.self.flag;
+      // Set destination and end condition.
+      if (iHaveFlag) {
+        destination = ownFlagPoint.point;
+        finish_fn = function(bot) {
+          return !bot.self.flag;
+        }
+      } else {
+        destination = enemyFlagPoint.point;
+        finish_fn = function(bot) {
+          return bot.self.flag;
+        }
       }
-    } else {
-      destination = enemyFlagPoint;
-      finish_fn = function(bot) {
-        return bot.self.flag;
+
+      // Get path.
+      var path = this.navmesh.calculatePath(this._getLocation(), destination);
+
+      // Retry if path not found.
+      if (typeof path == 'undefined') {
+        setTimeout(function() { this.consider(); }.bind(this), 1500);
+        return;
+      }
+
+      // Navigate the path.
+      this.navigate(path, finish_fn);
+    } else { // Yellow center flag game.
+      this.chat_all("I don't know how to play this type of game!");
+      var iHaveFlag = this.self.flag;
+      if (!iHaveFlag) {
+        var yellow_flag = this.findYellowFlag();
+        if (yellow_flag.present) {
+          var destination = yellow_flag.point;
+          finish_fn = function(bot) {
+            return !bot.self.flag;
+          }
+        }
+      } else {
+
       }
     }
-
-    // Get path.
-    var path = this.navmesh.calculatePath(this._getLocation(), destination);
-
-    // Retry if path not found.
-    if (typeof path == 'undefined') {
-      setTimeout(function() { this.consider(); }.bind(this), 1500);
-      return;
-    }
-
-    // Navigate the path.
-    this.navigate(path, finish_fn);
   }
 
   // Takes a path and navigates it, assuming a static target right now.
@@ -523,41 +541,48 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     }.bind(this);
   }
 
-  // Get enemy flag coordinates. An object is returned with properties point and present.
+  // Get enemy flag coordinates. An object is returned with properties 'point' and 'present'.
   // if flag is present at point then it will be set to true. If no flag is found, then
-  // 
+  // null is returned.
   Bot.prototype.findEnemyFlag = function() {
     // Get flag value.
     var flagval = (this.self.team + 2 == 4) ? 3 : 4;
     for (column in tagpro.map) {
       for (tile in tagpro.map[column]) {
         if (tagpro.map[column][tile] == flagval || tagpro.map[column][tile] == flagval+0.1) {
-          return new Point(40 * column, 40 * tile);;
+          var point = new Point(40 * column, 40 * tile);
+          var present = (tagpro.map[column][tile] == flagval);
+          return {point: point, present: present};
         }
       }
     }
     return null;
   }
 
-  // Get own flag coordinates. todo: differentiate between present and non-present flag.
+  // Get own flag coordinates. See #findEnemyFlag for details.
   Bot.prototype.findOwnFlag = function() {
     var flagval = this.self.team + 2;
     for (column in tagpro.map) {
       for (tile in tagpro.map[column]) {
         if (tagpro.map[column][tile] == flagval || tagpro.map[column][tile] == flagval+0.1) {
-          return new Point(40 * column, 40 * tile);
+          var point = new Point(40 * column, 40 * tile);
+          var present = (tagpro.map[column][tile] == flagval);
+          return {point: point, present: present};
         }
       }
     }
     return null;
   }
 
+  // Get yellow flag coordinates. See #findEnemyFlag for details.
   Bot.prototype.findYellowFlag = function() {
     var flagval = 16;
     for (column in tagpro.map) {
       for (tile in tagpro.map[column]) {
         if (tagpro.map[column][tile] == flagval || tagpro.map[column][tile] == flagval+0.1) {
-          return new Point(40 * column, 40 * tile);;
+          var point = new Point(40 * column, 40 * tile);
+          var present = (tagpro.map[column][tile] == flagval);
+          return {point: point, present: present};
         }
       }
     }
@@ -567,8 +592,27 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
   // Identify the game time, whether capture the flag or yellow flag.
   // Returns either "ctf" or "yf".
   Bot.prototype._getGameType = function() {
-    if (this.findOwnFlag && this.findEnemyFlag) return "ctf";
+    if (this.findOwnFlag() && this.findEnemyFlag()) {
+      return "ctf";
+    } else {
+      return "yf";
+    }
+  }
 
+  Bot.prototype.chat_all = function(chatMessage) {
+    if (!this.hasOwnProperty('lastMessage')) this.lastMessage = 0;
+    var limit = 500 + 10;
+    var now = new Date();
+    var timeDiff = now - this.lastMessage;
+    if (timeDiff > limit) {
+      tagpro.socket.emit("chat", {
+        message: chatMessage,
+        toAll: 1
+      });
+      this.lastMessage = new Date();
+    } else if (timeDiff >= 0) {
+      setTimeout(chat_all, limit - timeDiff, chatMessage);
+    }
   }
 
   // Start.
