@@ -15,9 +15,14 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
   var Poly = pp.Poly;
   var Edge = pp.Edge;
 
-  // A Bot is responsible for decision making, navigation (with the aid of map-related modules)
-  // and low-level steering/locomotion.
-  var Bot = function() {
+  /*
+   * A Mover is responsible for executing actions within the
+   * environment and managing keypresses.
+   *
+   * To set an agent as a mover, extend its prototype, like
+   *     $.extend(Agent.prototype, new Mover());
+   */
+  var Mover = function() {
     // simPressed will be used to detect if the bot is pressing any keys: right, left, down and up. We define the object (simPressed) here and set the variables to false.
     // keyWait will be used to check when the last keydown event was sent. This is usefull so the server won't kick you. The wait is separated for x and y keys.
     this.simPressed = {r: false, l: false, d: false, u: false};
@@ -28,7 +33,75 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
 
     // This is to detect key releases. Both real key releases and the bots. This is needed so we don't mess up the simPressed object.
     document.onkeyup = this._keyUpdateFunc(false);
+  }
 
+  // The sendKey function, use it by calling "sendKey('direction', 'keyState')".
+  // direction must be 'right', 'left', 'down' or 'up'. keyState must be 'keydown' or 'keyup'.
+  Mover.prototype.sendKey = function(direction, keyState) {      
+    // Defining the jQuery ($) key event as 'e'.
+    var e = $.Event(keyState);
+    
+    // This switch statement will first check what direction was sent.
+    // Then the if statement under that will check if keyWait is false.
+    // If keyWait is false and a keydown event was sent while that key was not pressed,
+    // or a keyup event was sent while that key was pressed,
+    // assign the correct keycode for the key event and set keyWait to true for 25 miliseconds.
+    switch (direction) {
+      case 'right':
+        if (!this.keyWait.x && ((keyState == 'keydown' && !this.simPressed.r) || (keyState == 'keyup' && this.simPressed.r))) {
+          e.keyCode = 100;
+          this.keyWait.x = true;
+          setTimeout(function() {this.keyWait.x = false;}.bind(this), 25);
+        }
+        break;
+        
+      case 'left':
+        if (!this.keyWait.x && ((keyState == 'keydown' && !this.simPressed.l) || (keyState == 'keyup' && this.simPressed.l))) {
+          e.keyCode = 97;
+          this.keyWait.x = true;
+          setTimeout(function() {this.keyWait.x = false;}.bind(this), 25);
+        }
+        break;
+        
+      case 'down':
+        if (!this.keyWait.y && ((keyState == 'keydown' && !this.simPressed.d) || (keyState == 'keyup' && this.simPressed.d))) {
+          e.keyCode = 115;
+          this.keyWait.y = true;
+          setTimeout(function() {this.keyWait.y = false;}.bind(this), 25);
+        }
+        break;
+        
+      case 'up':
+        if (!this.keyWait.y && ((keyState == 'keydown' && !this.simPressed.u) || (keyState == 'keyup' && this.simPressed.u))) {
+          e.keyCode = 119;
+          this.keyWait.y = true;
+          setTimeout(function() {this.keyWait.y = false;}.bind(this), 25);
+        }
+        break;
+    }
+    
+    // Do the key event, if keyCode was not defined (if the conditions aren't met), nothing will happen.
+    $('#viewPort').trigger(e);
+  }
+
+  // This returns a callback function to update keys being pressed for document key listener event.
+  Mover.prototype._keyUpdateFunc = function(newState) {
+    return function(d) {
+      d = d || window.event;
+      switch(d.keyCode) {
+        case 39: case 68: case 100: this.simPressed.r = newState; break;
+        case 37: case 65: case 97: this.simPressed.l = newState; break;
+        case 40: case 83: case 115: this.simPressed.d = newState; break;
+        case 38: case 87: case 119: this.simPressed.u = newState; break;
+      }
+    }.bind(this);
+  }
+
+
+
+  // A Bot is responsible for decision making, navigation (with the aid of map-related modules)
+  // and low-level steering/locomotion.
+  var Bot = function() {
     // Holds interval ids.
     this.actions = {};
 
@@ -37,6 +110,9 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     this.init();
     setTimeout(this.processMap.bind(this), 50);
   };
+
+  // Give move capabilities to Bot.
+  $.extend(Bot.prototype, new Mover());
 
   // Initialize functionality dependent on tagpro provisioning playerId.
   Bot.prototype.init = function() {
@@ -256,54 +332,7 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     }
   }
 
-  // The sendKey function, use it by calling "sendKey('direction', 'keyState')".
-  // direction must be 'right', 'left', 'down' or 'up'. keyState must be 'keydown' or 'keyup'.
-  Bot.prototype.sendKey = function(direction, keyState) {      
-    // Defining the jQuery ($) key event as 'e'.
-    var e = $.Event(keyState);
-    
-    // This switch statement will first check what direction was sent.
-    // Then the if statement under that will check if keyWait is false.
-    // If keyWait is false and a keydown event was sent while that key was not pressed,
-    // or a keyup event was sent while that key was pressed,
-    // assign the correct keycode for the key event and set keyWait to true for 25 miliseconds.
-    switch (direction) {
-      case 'right':
-        if (!this.keyWait.x && ((keyState == 'keydown' && !this.simPressed.r) || (keyState == 'keyup' && this.simPressed.r))) {
-          e.keyCode = 100;
-          this.keyWait.x = true;
-          setTimeout(function() {this.keyWait.x = false;}.bind(this), 25);
-        }
-        break;
-        
-      case 'left':
-        if (!this.keyWait.x && ((keyState == 'keydown' && !this.simPressed.l) || (keyState == 'keyup' && this.simPressed.l))) {
-          e.keyCode = 97;
-          this.keyWait.x = true;
-          setTimeout(function() {this.keyWait.x = false;}.bind(this), 25);
-        }
-        break;
-        
-      case 'down':
-        if (!this.keyWait.y && ((keyState == 'keydown' && !this.simPressed.d) || (keyState == 'keyup' && this.simPressed.d))) {
-          e.keyCode = 115;
-          this.keyWait.y = true;
-          setTimeout(function() {this.keyWait.y = false;}.bind(this), 25);
-        }
-        break;
-        
-      case 'up':
-        if (!this.keyWait.y && ((keyState == 'keydown' && !this.simPressed.u) || (keyState == 'keyup' && this.simPressed.u))) {
-          e.keyCode = 119;
-          this.keyWait.y = true;
-          setTimeout(function() {this.keyWait.y = false;}.bind(this), 25);
-        }
-        break;
-    }
-    
-    // Do the key event, if keyCode was not defined (if the conditions aren't met), nothing will happen.
-    $('#viewPort').trigger(e);
-  }
+  
 
   Bot.prototype.getAcc = function() {
     // 'for in' loop to loop through players.
@@ -528,18 +557,7 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     this.sendKey('left', 'keyup');
   }
 
-  // This returns a callback function to update keys being pressed for document key listener event.
-  Bot.prototype._keyUpdateFunc = function(newState) {
-    return function(d) {
-      d = d || window.event;
-      switch(d.keyCode) {
-        case 39: case 68: case 100: this.simPressed.r = newState; break;
-        case 37: case 65: case 97: this.simPressed.l = newState; break;
-        case 40: case 83: case 115: this.simPressed.d = newState; break;
-        case 38: case 87: case 119: this.simPressed.u = newState; break;
-      }
-    }.bind(this);
-  }
+  
 
   // Get enemy flag coordinates. An object is returned with properties 'point' and 'present'.
   // if flag is present at point then it will be set to true. If no flag is found, then
