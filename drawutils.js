@@ -14,10 +14,6 @@ function(pp) {
   // color is optional and if not provided, will be black.
   drawPoly = function(poly, context, color) {
     if (typeof color == 'undefined') color = 'black';
-    // Resize relative to canvas offset and position.
-    // Values from global-game
-    var a = {x: 0, y: 0};
-    var e = 40 / 2; // from tile size 40.
     context.beginPath();
     var start = remap(poly.getPoint(0), context);
     context.moveTo(start.x, start.y);
@@ -104,8 +100,15 @@ function(pp) {
     // Holds a set of strings defining the properties under which 
     window.BotDrawings = this.drawings;
 
-    // Actually set everything up.
-    this._setDraw();
+    // Handle Pixi possibility.
+    if (typeof tagpro.renderer !== 'undefined') {
+      console.log("Pixi located.");
+      this.pixi();
+      return;
+    } else {
+      // Actually set everything up.
+      this._setDraw();
+    }
   }
 
   // Register another window property to look for.
@@ -161,5 +164,32 @@ function(pp) {
     };
   }
 
+  // Handle PIXI.js renderer
+  DrawUtils.prototype.pixi = function() {
+    // navmesh rendering.
+    // Create initial graphics from navmesh, create texture from it, set as child of tagpro background renderer.
+    var mesh_shapes = window.BotMeshShapes;
+    if (typeof mesh_shapes == 'undefined') {
+      // Try again later.
+      setTimeout(this.pixi.bind(this), 50);
+      return;
+    }
+    var mesh = new PIXI.Graphics();
+    mesh.lineStyle(2, 0x000000, 0.5);
+    console.log("Test");
+    mesh_shapes.forEach(function(poly) {
+      poly = poly.item;
+      var start = poly.getPoint(0);
+      mesh.moveTo(start.x, start.y);
+      for (var i = 1; i < poly.numpoints; i++) {
+        var next_point = poly.getPoint(i);
+        mesh.lineTo(next_point.x, next_point.y);
+      }
+      mesh.lineTo(start.x, start.y);
+    });
+    console.log(mesh);
+    console.log("Test");
+    tagpro.renderer.gameContainer.addChild(mesh);
+  }
   return DrawUtils;
 });

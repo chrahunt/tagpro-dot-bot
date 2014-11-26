@@ -55,7 +55,7 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     // Get game type, either ctf or yf.
     this.game_type = this._getGameType();
 
-    console.log("Bot loaded!");
+    console.log("Bot loaded!"); // DEBUG
     
     // Set up drawing.
     this.draw = new DrawUtils();
@@ -85,7 +85,7 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
       return {item: poly, color: 'black'}
     });
     window.BotMeshShapes = mesh_items;
-    console.log("Navmesh constructed.");
+    console.log("Navmesh constructed."); // DEBUG
   }
 
   // Stops the bot. Sets the stop action which all methods need to check for, and also
@@ -434,7 +434,7 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
         var pc = p.add(ray.mul(ray.dot(vpc) / ray.len()));
         // Length from c to its projection on the ray.
         var len_c_pc = c.sub(pc).len();
-        console.log("Distance: " + len_c_pc);
+        //console.log("Distance: " + len_c_pc);
         if (len_c_pc > radius) {
           return false;
         } else { // It intersects, but where?
