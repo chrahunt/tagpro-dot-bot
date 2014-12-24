@@ -168,28 +168,34 @@ function(pp) {
   DrawUtils.prototype.pixi = function() {
     // navmesh rendering.
     // Create initial graphics from navmesh, create texture from it, set as child of tagpro background renderer.
-    var mesh_shapes = window.BotMeshShapes;
-    if (typeof mesh_shapes == 'undefined') {
+    var mesh_polys = window.BotMeshShapes;
+    if (typeof mesh_polys == 'undefined') {
       // Try again later.
       setTimeout(this.pixi.bind(this), 50);
       return;
     }
+    var mesh_shapes = mesh_polys.map(function(poly_info) {
+      return this._convertPolyToPixiPoly(poly_info.item);
+    }, this);
+
     var mesh = new PIXI.Graphics();
-    mesh.lineStyle(2, 0x000000, 0.5);
+    mesh.lineStyle(1, 0x000000, 1);
     console.log("Test");
-    mesh_shapes.forEach(function(poly) {
-      poly = poly.item;
-      var start = poly.getPoint(0);
-      mesh.moveTo(start.x, start.y);
-      for (var i = 1; i < poly.numpoints; i++) {
-        var next_point = poly.getPoint(i);
-        mesh.lineTo(next_point.x, next_point.y);
-      }
-      mesh.lineTo(start.x, start.y);
+    mesh_shapes.forEach(function(shape) {
+      mesh.drawShape(shape);
     });
     console.log(mesh);
     console.log("Test");
     tagpro.renderer.gameContainer.addChild(mesh);
+  }
+
+  DrawUtils.prototype._convertPolyToPixiPoly = function(poly) {
+    var point_array = poly.points.reduce(function(values, point) {
+      return values.concat(point.x + 20, point.y + 20);
+    }, []);
+    // Add original point back to point array to resolve Pixi.js rendering issue.
+    point_array = point_array.concat(point_array[0], point_array[1]);
+    return new PIXI.Polygon(point_array);
   }
   return DrawUtils;
 });
