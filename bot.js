@@ -28,6 +28,16 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     this.simPressed = {r: false, l: false, d: false, u: false};
     this.keyWait = {x: false, y: false};
 
+    // For differently-named viewports on tangent/other servers.
+    var possible_ids = ["viewPort", "viewport"];
+    for (var i = 0; i < possible_ids.length; i++) {
+      var possible_id = possible_ids[i];
+      if ($('#' + possible_id).length > 0) {
+        this.viewport = $('#' + possible_id);
+        break;
+      }
+    }
+    
     // This is to detect key presses. Both real key presses and the bots. This is needed so we don't mess up the simPressed object.
     document.onkeydown = this._keyUpdateFunc(true);
 
@@ -81,7 +91,7 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     }
     
     // Do the key event, if keyCode was not defined (if the conditions aren't met), nothing will happen.
-    $('#viewPort').trigger(e);
+    this.viewport.trigger(e);
   }
 
   // This returns a callback function to update keys being pressed for document key listener event.
