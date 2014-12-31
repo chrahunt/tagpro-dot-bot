@@ -180,12 +180,12 @@ function(pp) {
 
     var mesh = new PIXI.Graphics();
     mesh.lineStyle(1, 0x000000, 1);
-    console.log("Test");
+    console.log("Test"); // DEBUG
     mesh_shapes.forEach(function(shape) {
       mesh.drawShape(shape);
     });
-    console.log(mesh);
-    console.log("Test");
+    console.log(mesh); // DEBUG
+    console.log("Test"); // DEBUG
     tagpro.renderer.gameContainer.addChild(mesh);
   }
 

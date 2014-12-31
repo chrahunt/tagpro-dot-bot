@@ -15,12 +15,13 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
   var Poly = pp.Poly;
   var Edge = pp.Edge;
 
-  /*
+  /**
    * A Mover is responsible for executing actions within the
    * environment and managing keypresses.
    *
    * To set an agent as a mover, extend its prototype, like
    *     $.extend(Agent.prototype, new Mover());
+   * @constructor
    */
   var Mover = function() {
     // simPressed will be used to detect if the bot is pressing any keys: right, left, down and up. We define the object (simPressed) here and set the variables to false.
@@ -45,8 +46,12 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     document.onkeyup = this._keyUpdateFunc(false);
   }
 
-  // The sendKey function, use it by calling "sendKey('direction', 'keyState')".
-  // direction must be 'right', 'left', 'down' or 'up'. keyState must be 'keydown' or 'keyup'.
+  /**
+   * The sendKey function simulates a keypress on the viewport.
+   * @param {string} direction - The direction to simulate the keypress for.
+   * @param {string} keyState - Whether to press or release, this should
+   * be "keyup" or "keydown".
+   */
   Mover.prototype.sendKey = function(direction, keyState) {      
     // Defining the jQuery ($) key event as 'e'.
     var e = $.Event(keyState);
@@ -109,8 +114,11 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
 
 
 
-  // A Bot is responsible for decision making, navigation (with the aid of map-related modules)
-  // and low-level steering/locomotion.
+  /**
+   * A Bot is responsible for decision making, navigation (with the aid
+   * of map-related modules) and low-level steering/locomotion.
+   * @constructor
+   */
   var Bot = function() {
     // Holds interval ids.
     this.actions = {};
@@ -245,12 +253,15 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     }
   }
 
-  // Takes a path and navigates it, assuming a static target right now.
-  // Path is an array of points representing points that the bot must get to
-  // reconsider is a function that, when true, stops the current navigation
-  // cycle and calls consider. It should be called with 'this'
-  // iteration is a parameter used by the function itself to track how many
-  // cycles have been completed, used for recomputing the path.
+  /**
+   * Navigates a path, assuming the end target it static.
+   * @param {array} path - An array of Points representing a path to a
+   *   goal.
+   * @param {function} reconsider
+   * @param {integer} [iteration=0] - Which iteration of the navigation
+   *   function the bot is on. Used by `navigate` itself to determine when
+   *   the path should be recomputed.
+   */
   Bot.prototype.navigate = function(path, reconsider, iteration) {
     // Don't execute function if bot is stopped.
     if (this.stopped) return;
@@ -394,9 +405,12 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     delete window.BotVectors;
   }
 
-  // Get predicted location based on current position and velocity. Returns a Point object.
-  // The multiplier argument is optional and specifies how many time steps into the future
-  // the prediction will be.
+  /**
+   * Get predicted location based on current position and velocity.
+   * @param {number} [multiplier=60] - How many steps into the future the
+   *   prediction will be.
+   * @returns {Point} - The predicted x, y coordinates.
+   */
   Bot.prototype._getPLocation = function(multiplier) {
     if (typeof multiplier == 'undefined') multiplier = 60;
     var selfX = this.self.x + this.self.lx * multiplier;
@@ -409,13 +423,24 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     return new Point(this.self.x, this.self.y);
   }
 
-  // Get current velocity as a point vector.
+  /**
+   * Get current velocity.
+   * @param {number} [multiplier=60] - How much to scale the
+   *   `lx` and `ly` values.
+   * @returns {Point} - The scaled velocity.
+   */
   Bot.prototype._getVector = function(multiplier) {
     if (typeof multiplier == 'undefined') multiplier = 60;
     return new Point(this.self.lx * multiplier, this.self.ly * multiplier);
   }
 
-  // Function for approaching a static target from the current position.
+  /**
+   * Given a target, returns a vector representing the desired velocity
+   * for approaching that target. Assumes a clear path to target exists.
+   * @param {Point}  target - The target location to approach.
+   * @returns {Point} - The desired velocity, after accounting for the
+   *   current velocity.
+   */
   Bot.prototype._seek = function(target) {
     var MAX_VELOCITY = 30;
 
@@ -520,6 +545,12 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     return avoidance;
   }
 
+  /**
+   * Returns an array of Points that specifies the coordinates of any
+   * spikes on the map.
+   * @returns {array} - An array of Point objects representing the
+   *   coordinates of the spikes.
+   */
   Bot.prototype.getspikes = function() {
     if (this.hasOwnProperty('spikes')) {
       return this.spikes;
@@ -538,9 +569,11 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     }
   }
 
-  // This function takes in a point representing a desired direction vector and presses
-  // the keys necessary to meet that vector, if needed.
-  // todo: add threshold for more fine-grained control, 
+  /**
+   * Takes the desired velocity as a parameter and presses the keys
+   * necessary to make it happen.
+   * @param {Point} vec - The desired velocity.
+   */
   Bot.prototype._update = function(vec) {
     var current = this._getVector(1);
     if (vec.x < current.x) {
@@ -566,8 +599,6 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     this.sendKey('right', 'keyup');
     this.sendKey('left', 'keyup');
   }
-
-  
 
   // Get enemy flag coordinates. An object is returned with properties 'point' and 'present'.
   // if flag is present at point then it will be set to true. If no flag is found, then
@@ -662,54 +693,3 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
   window.myBot = bot;
 
 });
-
-
-// Here is a list of player values:
-//
-// a: Unknown.
-// ac: Acceleration from pressing arrow keys. Changes with Juke Juice or if on team tiles.
-// angle: Rotation angle.
-// auth: If using registered name.
-// bomb: If player has rolling bomb.
-// cache: Player cache object.
-// dead: If player is dead.
-// degree: Player's degree.
-// degreeCache: Player degree cache object.
-// den: Unknown.
-// directSet: Unknown.
-// down: If player is pressing down.
-// draw: If player is drawn in your view.
-// flag: If player has any flag.
-// flair: Player's flair object.
-// grip: If player has Juke Juice.
-// id: The players ID number. The player can be called directly by using: tagpro.players["ID number"].
-// lastSync: Unknown object.
-// left: If player is pressing left.
-// lx: Player's X axis speed.
-// ly: Player's Y axis speed.
-// mongoId: Unknown.
-// ms: Top speed a player can go under his own power. Changes with Top Speed power-up and team tiles.
-// name: Player's name.
-// points: Unknown.
-// pressing: Unknown object.
-// ra: Unknown.
-// right: If player is pressing right.
-// rx: Player's X axis pixel location divided by 10. Not as accurate as 'x'.
-// ry: Player's Y axis pixel location divided by 10. Not as accurate as 'y'.
-// s-captures: Number of captures player has.
-// s-drops: Number of drops player has.
-// s-grabs: Number of grabs player has.
-// s-hold: Amount of hold time player has.
-// s-pops: Number of times player has been popped.
-// s-prevent: Amount of prevent player has.
-// s-returns: Number of returns player has.
-// s-support: Amount of support player has.
-// s-tags: Number of tags player has.
-// score: Total player score.
-// speed: If player has Top Speed.
-// sync: Unknown.
-// tagpro: If player has TagPro.
-// team: What team player is on. 1 = red, 2 = blue.
-// up: If player is pressing up.
-// x: Player's X location.
-// y: Player's Y location.
