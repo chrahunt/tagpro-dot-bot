@@ -4,6 +4,11 @@ requirejs.config({
       exports: 'ClipperLib'
     }
   },
+  map: {
+    '*': {
+      'bragi': 'bragi-browser'
+    }
+  },
   waitSeconds: 15
 });
 

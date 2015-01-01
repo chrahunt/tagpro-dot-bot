@@ -1,5 +1,5 @@
-define(['map/parse-map', 'map/navmesh', 'map/polypartition', 'drawutils'],
-function(mapParser,       NavMesh,       pp,                  DrawUtils) {
+define(['map/parse-map', 'map/navmesh', 'map/polypartition', 'drawutils', 'bragi'],
+function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logger) {
   // Alias useful classes.
   var Point = pp.Point;
   var Poly = pp.Poly;
@@ -31,7 +31,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils) {
 
   // Initialize functionality dependent on tagpro provisioning playerId.
   Bot.prototype.init = function() {
-    console.log("Trying init.");
+    Logger.log("bot", "Initializing Bot.");
     // Ensure that the tagpro global object has initialized and allocated us an id.
     if (typeof tagpro !== 'object' || !tagpro.playerId) {return setTimeout(this.init.bind(this), 250);}
 
@@ -46,7 +46,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils) {
     // Get game type, either ctf or yf.
     this.game_type = this._getGameType();
 
-    console.log("Bot loaded!"); // DEBUG
+    Logger.log("bot", "Bot loaded."); // DEBUG
     
     // Set up drawing.
     this.draw = new DrawUtils();
@@ -76,7 +76,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils) {
       return {item: poly, color: 'black'}
     });
     window.BotMeshShapes = mesh_items;
-    console.log("Navmesh constructed."); // DEBUG
+    Logger.log("bot", "Navmesh constructed.");
   }
 
   // Stops the bot. Sets the stop action which all methods need to check for, and also
@@ -101,6 +101,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils) {
     // Ensure everything is initialized.
     if (!this.initialized || !this.mapInitialized || this.self.dead) { return setTimeout(function() { this.consider() }.bind(this), 50); }
 
+    // Normal capture-the-flag game.
     if (this.game_type == "ctf") {
       // First, just get enemy flag location, set it as destination, find path to it, go get it, return to base
       var enemyFlagPoint = this.findEnemyFlag();
@@ -127,6 +128,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils) {
 
       // Retry if path not found.
       if (typeof path == 'undefined') {
+        Logger.log("bot", "No path found, retrying...");
         setTimeout(function() { this.consider(); }.bind(this), 1500);
         return;
       }
@@ -229,8 +231,14 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils) {
       window.BotVectors.push({item: new Edge(me, me.add(avoid_vec)), color: 'red'});
 
       // Apply desired vector after a short delay.
-      setTimeout(function() {this._update(desired_vector);}.bind(this), 0);
+      setTimeout(function() {
+        if (!this.stopped)
+          this._update(desired_vector);
+      }.bind(this), 0);
+
+      // Recalculate every 50 iterations.
       if (iteration >= 50) {
+        Logger.log("bot", "Recalculating path.");
         path = this.navmesh.calculatePath(this._getLocation(), path[path.length - 1]);
         timeout = 0;
         if (typeof path == 'undefined') {
@@ -239,7 +247,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils) {
         }
         iteration = 0;
       } else {
-        timeout = 0;
+        timeout = 20;
       }
       setTimeout(function() {this.navigate(path, reconsider, iteration);}.bind(this), timeout)
     } else { // goal not found. clean up

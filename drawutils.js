@@ -100,9 +100,8 @@ function(pp) {
     // Holds a set of strings defining the properties under which 
     window.BotDrawings = this.drawings;
 
-    // Handle Pixi possibility.
+    // Handle possibility of Pixi.js-based renderer.
     if (typeof tagpro.renderer !== 'undefined') {
-      console.log("Pixi located.");
       this.pixi();
       return;
     } else {
@@ -180,12 +179,9 @@ function(pp) {
 
     var mesh = new PIXI.Graphics();
     mesh.lineStyle(1, 0x000000, 1);
-    console.log("Test"); // DEBUG
     mesh_shapes.forEach(function(shape) {
       mesh.drawShape(shape);
     });
-    console.log(mesh); // DEBUG
-    console.log("Test"); // DEBUG
     tagpro.renderer.gameContainer.addChild(mesh);
   }
 
