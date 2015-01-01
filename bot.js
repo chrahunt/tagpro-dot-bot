@@ -84,6 +84,10 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   Bot.prototype.stop = function() {
     Logger.log("bot", "Stopping bot.");
     this.stopped = true;
+    this._clearInterval("game");
+    this._clearInterval("navigate");
+    this._clearInterval("path");
+    this._clearInterval("goal");
     this.allUp();
     this._removeDraw();
   }
@@ -92,20 +96,80 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   Bot.prototype.start = function() {
     Logger.log("bot", "Starting bot.");
     this.stopped = false;
-    this.consider();
+    this._setInterval("game", this._gameUpdate, 1000);
   }
 
-  // Consider the game and take necessary actions.
-  Bot.prototype.consider = function() {
+  /**
+   * Navigates a path, assuming the end target is static.
+   */
+  Bot.prototype.navigate = function() {
     // Don't execute function if bot is stopped.
     if (this.stopped) return;
 
-    // Ensure everything is initialized.
-    if (!this.initialized || !this.mapInitialized || this.self.dead) { return setTimeout(function() { this.consider() }.bind(this), 50); }
+    var me = this._getLocation();
+    
+    // Get desired vectors.
+    var seek_vec, avoid_vec;//, nav_vec;
+
+    window.BotVectors = [];
+
+    if (this.goal) {
+      window.BotGoal = this.goal;
+      seek_vec = this._seek(this.goal);
+    } else {
+      seek_vec = new Point(0, 0);
+    }
+    
+    avoid_vec = this._avoid();
+    /*if (this.path.length > 1) {
+      nav_vec = this._navpath(goal, this.path[1]);
+    } else {
+      nav_vec = new Point(0, 0);
+    }*/
+    
+    // Calculate desired vector.
+    var desired_vector = new Point(0, 0);
+    desired_vector = desired_vector.add(seek_vec);
+    desired_vector = desired_vector.add(avoid_vec);
+    //desired_vector = desired_vector.add(nav_vec);
+
+    // Add vectors to window object for visualizations.
+    window.BotVectors.push({item: new Edge(me, me.add(seek_vec)), color: 'green'});
+    window.BotVectors.push({item: new Edge(me, me.add(avoid_vec)), color: 'red'});
+    //window.BotVectors.push({edge: new Edge(me, me.add(nav_vec)), color: 'blue'});
+
+    // Apply desired vector after a short delay.
+    setTimeout(function() {
+      if (!this.stopped)
+        this._update(desired_vector);
+    }.bind(this), 0);
+  }
+
+  /**
+   * This function updates the state of the bot in response to changes
+   * in the game. This includes changing tactics, calculating a new path
+   * and removing recurring functions.
+   */
+  Bot.prototype._gameUpdate = function() {
+    // Don't execute updates if bot is stopped.
+    if (this.stopped) return;
+
+    // Don't execute if bot or map isn't initialized.
+    if (!this.initialized || !this.mapInitialized) return;
+
+    // Dead bots don't navigate.
+    if (this.self.dead) {
+      this._clearInterval('navigate');
+      this._clearInterval('path');
+      this._clearInterval('goal');
+      return;
+    }
 
     // Normal capture-the-flag game.
     if (this.game_type == "ctf") {
-      // First, just get enemy flag location, set it as destination, find path to it, go get it, return to base
+      var start = this._getLocation();
+
+      // Get possible destinations.
       var enemyFlagPoint = this.findEnemyFlag();
       var ownFlagPoint = this.findOwnFlag();
 
@@ -115,25 +179,16 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
       // Set destination and end condition.
       if (iHaveFlag) {
         destination = ownFlagPoint.point;
-        finish_fn = function(bot) {
-          return !bot.self.flag;
-        }
       } else {
         destination = enemyFlagPoint.point;
-        finish_fn = function(bot) {
-          return bot.self.flag;
-        }
       }
 
-      var calculatePathCallback = function(path) {
-        if (typeof path == "undefined") {
-          Logger.log("bot", "No path found, retrying...");
-          setTimeout(function() { this.consider(); }.bind(this), 1500);
-        } else {
-          this.navigate(path, finish_fn);
-        }
-      }.bind(this);
-      this.navmesh.calculatePath(this._getLocation(), destination, calculatePathCallback);
+      this.navmesh.calculatePath(start, destination, function(path) {
+        this._updatePath(path);
+        this._setInterval('navigate', this.navigate, 10);
+        this._setInterval('path', this._pathUpdate, 500);
+        this._setInterval('goal', this._goalUpdate, 20);
+      }.bind(this));
     } else { // Yellow center flag game.
       this.chat_all("I don't know how to play this type of game!");
       var iHaveFlag = this.self.flag;
@@ -152,42 +207,25 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   }
 
   /**
-   * Navigates a path, assuming the end target it static.
-   * @param {array} path - An array of Points representing a path to a
-   *   goal.
-   * @param {function} reconsider
-   * @param {integer} [iteration=0] - Which iteration of the navigation
-   *   function the bot is on. Used by `navigate` itself to determine when
-   *   the path should be recomputed.
+   * This function updates `this.goal` to the next specific point that
+   * should be approached by the bot on its navigation path.
+   * @private
    */
-  Bot.prototype.navigate = function(path, reconsider, iteration) {
-    // Don't execute function if bot is stopped.
-    if (this.stopped) return;
-
-    // Set iteration
-    if (typeof iteration == 'undefined') iteration = 0;
-    iteration++;
-
+  Bot.prototype._goalUpdate = function() {
     var goal = false;
     var me = this._getLocation();
-    // todo: use _getPLocation but remove or handle the possibility of getting points outside of walkable range.
-    if (this.self.dead) {
-      //this._clearInterval('navigateInterval');
-      // Consider again after waiting until respawn.
-      setTimeout(function() { this.consider();}.bind(this), 500);
+    if (!this.path)
       return;
-    }
 
-    if (reconsider(this)) {
-      setTimeout(function() { this.consider();}.bind(this), 10);
-      return;
-    }
-
+    var path = this.path.slice();
     // Find next location to seek out in path.
     if (path.length > 0) {
       goal = path[0];
       var cut = false;
       var last_index = 0;
+
+      // Get point furthest along path that is visible from current
+      // location.
       for (var i = 0; i < path.length; i++) {
         if (this.navmesh.checkVisible(me, path[i])) {
           goal = path[i];
@@ -199,9 +237,11 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
           break;
         }
       }
+
       if (cut) {
         path.splice(0, last_index - 1);
       }
+
       if (path.length == 1) {
         goal = path[0];
         if (me.dist(goal) < 20) {
@@ -209,66 +249,35 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
         }
       }
     }
-    
-    // If goal found.
-    if (goal) {
-      window.BotGoal = goal;
-      window.BotVectors = [];
 
-      // Sum result of each behavior.
-      var desired_vector = new Point(0, 0);
-      var seek_vec = this._seek(goal);
-      desired_vector = desired_vector.add(seek_vec);
-      var avoid_vec = this._avoid();
-      desired_vector = desired_vector.add(avoid_vec);
-      /*if (path.length > 1) {
-        var nav_vec = this._navpath(goal, path[1]);
-        desired_vector = desired_vector.add(nav_vec);
-        window.BotVectors.push({edge: new Edge(me, me.add(nav_vec)), color: 'blue'});
-      }*/
-      window.BotVectors.push({item: new Edge(me, me.add(seek_vec)), color: 'green'});
-      window.BotVectors.push({item: new Edge(me, me.add(avoid_vec)), color: 'red'});
-
-      // Apply desired vector after a short delay.
-      setTimeout(function() {
-        if (!this.stopped)
-          this._update(desired_vector);
-      }.bind(this), 0);
-
-      // Recalculate every 50 iterations.
-      if (iteration >= 50) {
-        Logger.log("bot", "Recalculating path.");
-        var calculatePathCallback = function(path) {
-          if (typeof path == "undefined") {
-            Logger.log("bot:debug", "Path not found, reconsidering...");
-            setTimeout(function() { this.consider(); }.bind(this), 1500);
-          } else {
-            var iteration = 0;
-            Logger.log("bot:debug", "Path found, navigating...");
-            setTimeout(function() { this.navigate(path, reconsider, iteration); }.bind(this), 0);
-          }
-        }.bind(this);
-        this.navmesh.calculatePath(this._getLocation(), path[path.length - 1], calculatePathCallback);
-        //path = this.navmesh.calculatePath(this._getLocation(), path[path.length - 1]);
-        /*timeout = 0;
-        if (typeof path == 'undefined') {
-          setTimeout(function() { this.consider(); }.bind(this), 1500);
-          return;
-        }
-        iteration = 0;*/
-      } else {
-        timeout = 20;
-        setTimeout(function() {this.navigate(path, reconsider, iteration);}.bind(this), timeout)
-      }
-    } else { // goal not found. clean up
-      // Break interval and remove property.
-      //this._clearInterval('navigateInterval');
-      // Todo: notify listeners that goal has been reached.
-      setTimeout(function() { this.consider();}.bind(this), 500);
-    }
+    // Update bot state.
+    this.goal = goal;
+    this.path = path;
   }
 
-  
+  /**
+   * This function updates `this.path` to reflect a (potentially) new
+   * set of points needed to reach the end goal of the current path.
+   * @private
+   */
+  Bot.prototype._pathUpdate = function() {
+    if (!this.path)
+      return;
+
+    var start = this._getLocation();
+    var end = this.path[this.path.length - 1];
+    this.navmesh.calculatePath(start, end, this._updatePath.bind(this));
+  }
+
+  /**
+   * This function is used as the callback to navmesh.calculatePath,
+   * to update the bot's view of the path if found.
+   */
+  Bot.prototype._updatePath = function(path) {
+    if (typeof path !== "undefined") {
+      this.path = path;
+    }
+  }
 
   Bot.prototype.getAcc = function() {
     // 'for in' loop to loop through players.
@@ -307,10 +316,36 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
 
   // Clear the interval given by function name.
   Bot.prototype._clearInterval = function(name) {
-    if (this.actions.hasOwnProperty(name)) {
+    if (this._isInterval(name)) {
       clearInterval(this.actions[name]);
       delete this.actions[name];
     }
+  }
+
+  /**
+   * Set the given function as an function executed on an interval
+   * given by `time`. Function is bound to `this`, and can be removed
+   * using `_clearInterval`. If an interval function with the given name
+   * is already set, the function does nothing.
+   * @private
+   * @param {string} name
+   * @param {Function} fn
+   * @param {integer} time - The time in ms.
+   */
+  Bot.prototype._setInterval = function(name, fn, time) {
+    if (!this._isInterval(name)) {
+      this.actions[name] = setInterval(fn.bind(this), time);
+    }
+  }
+
+  /**
+   * Check whether the interval with the given name is active.
+   * @private
+   * @param {string} name
+   * @return {boolean} - Whether the interval is active.
+   */
+  Bot.prototype._isInterval = function(name) {
+    return this.actions.hasOwnProperty(name);
   }
 
   Bot.prototype._removeDraw = function() {
