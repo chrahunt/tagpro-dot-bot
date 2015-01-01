@@ -82,6 +82,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   // Stops the bot. Sets the stop action which all methods need to check for, and also
   // ensures the bot stays still (ish).
   Bot.prototype.stop = function() {
+    Logger.log("bot", "Stopping bot.");
     this.stopped = true;
     this.allUp();
     this._removeDraw();
@@ -89,6 +90,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
 
   // Restarts the bot.
   Bot.prototype.start = function() {
+    Logger.log("bot", "Starting bot.");
     this.stopped = false;
     this.consider();
   }
@@ -123,18 +125,15 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
         }
       }
 
-      // Get path.
-      var path = this.navmesh.calculatePath(this._getLocation(), destination);
-
-      // Retry if path not found.
-      if (typeof path == 'undefined') {
-        Logger.log("bot", "No path found, retrying...");
-        setTimeout(function() { this.consider(); }.bind(this), 1500);
-        return;
-      }
-
-      // Navigate the path.
-      this.navigate(path, finish_fn);
+      var calculatePathCallback = function(path) {
+        if (typeof path == "undefined") {
+          Logger.log("bot", "No path found, retrying...");
+          setTimeout(function() { this.consider(); }.bind(this), 1500);
+        } else {
+          this.navigate(path, finish_fn);
+        }
+      }.bind(this);
+      this.navmesh.calculatePath(this._getLocation(), destination, calculatePathCallback);
     } else { // Yellow center flag game.
       this.chat_all("I don't know how to play this type of game!");
       var iHaveFlag = this.self.flag;
@@ -239,17 +238,28 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
       // Recalculate every 50 iterations.
       if (iteration >= 50) {
         Logger.log("bot", "Recalculating path.");
-        path = this.navmesh.calculatePath(this._getLocation(), path[path.length - 1]);
-        timeout = 0;
+        var calculatePathCallback = function(path) {
+          if (typeof path == "undefined") {
+            Logger.log("bot:debug", "Path not found, reconsidering...");
+            setTimeout(function() { this.consider(); }.bind(this), 1500);
+          } else {
+            var iteration = 0;
+            Logger.log("bot:debug", "Path found, navigating...");
+            setTimeout(function() { this.navigate(path, reconsider, iteration); }.bind(this), 0);
+          }
+        }.bind(this);
+        this.navmesh.calculatePath(this._getLocation(), path[path.length - 1], calculatePathCallback);
+        //path = this.navmesh.calculatePath(this._getLocation(), path[path.length - 1]);
+        /*timeout = 0;
         if (typeof path == 'undefined') {
           setTimeout(function() { this.consider(); }.bind(this), 1500);
           return;
         }
-        iteration = 0;
+        iteration = 0;*/
       } else {
         timeout = 20;
+        setTimeout(function() {this.navigate(path, reconsider, iteration);}.bind(this), timeout)
       }
-      setTimeout(function() {this.navigate(path, reconsider, iteration);}.bind(this), timeout)
     } else { // goal not found. clean up
       // Break interval and remove property.
       //this._clearInterval('navigateInterval');

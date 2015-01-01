@@ -9,7 +9,7 @@ requirejs.config({
       'bragi': 'bragi-browser'
     }
   },
-  waitSeconds: 15
+  waitSeconds: 20
 });
 
 require(['bot', 'browserMover'],
