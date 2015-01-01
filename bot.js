@@ -399,8 +399,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
 
     var steering = new Point(0, 0);
     var desired_velocity = target.sub(prediction).normalize().mul(MAX_VELOCITY);
-    steering = desired_velocity.sub(this._getVector(5));
-    return steering;
+    return desired_velocity;
   }
 
   // Move such that it is more likely the next point along the path will appear.
@@ -428,69 +427,96 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
 
   // Returns a desired direction vector for avoiding spikes.
   Bot.prototype._avoid = function() {
-    // If the ray intersects the circle, the distance to the intersection
-    // along the ray is returned, otherwise false is returned.
-    // p - point defining start of ray
-    // ray - unit vector extending from p
-    // c - point defining center of circle
-    // radius [optional] - radius of circle
-    lineIntersectsCircle = function(p, ray, c, radius) {
-      if (typeof radius == 'undefined') radius = 55;//45; // spike radius + ball radius + 1
+    /**
+     * @typedef Collision
+     * @type {object}
+     * @property {boolean} collides - Whether there is a collision.
+     * @property {boolean} inside - Whether one object is inside the other.
+     * @property {?Point} point - The point of collision, if collision
+     *   occurs, and if `inside` is false.
+     * @property {?Point} normal - A unit vector normal to the point
+     *   of collision, if it occurs and if `inside` is false.
+     */
+    /**
+     * If the ray intersects the circle, the distance to the intersection
+     * along the ray is returned, otherwise false is returned.
+     * @param {Point} p - The start of the ray.
+     * @param {Point} ray - Unit vector extending from `p`.
+     * @param {Point} c - The center of the circle for the object being
+     *   checked for intersection.
+     * @param {number} [radius=55] - The radius of the circle.
+     * @return {Collision} - The collision information.
+     */
+    var lineIntersectsCircle = function(p, ray, c, radius) {
+      // spike radius + ball radius + 1
+      if (typeof radius == 'undefined') radius = 55;
+      var collision = {
+        collides: false,
+        inside: false,
+        point: null,
+        normal: null
+      }
       var vpc = c.sub(p);
-      if (c.dot(ray) < 0) { // circle behind p
-        if (vpc.len() > radius) {
-          return false;
-        } else {
-          return true;
-        }
-      } else { // circle ahead of p
+
+      if (vpc.len() <= radius) {
+        // Point is inside obstacle.
+        collision.collides = true;
+        collision.inside = (vpc.len() !== radius);
+      } else if (c.dot(ray) >= 0) {
+        // Circle is ahead of or in-line with point.
         // Projection of center point onto ray.
         var pc = p.add(ray.mul(ray.dot(vpc) / ray.len()));
         // Length from c to its projection on the ray.
         var len_c_pc = c.sub(pc).len();
-        //console.log("Distance: " + len_c_pc);
-        if (len_c_pc > radius) {
-          return false;
-        } else { // It intersects, but where?
+
+        if (len_c_pc <= radius) {
+          collision.collides = true;
+
+          // Distance from projected point to intersection.
           var len_intersection = Math.sqrt(len_c_pc * len_c_pc + radius * radius);
-          return pc.dist(p) - len_intersection;
+          collision.point = pc.sub(ray.mul(len_intersection));
+          collision.normal = collision.point.sub(c).normalize();
         }
       }
+      return collision;
     }.bind(this);
 
-    // Takes a position and a vector looking ahead of the position. Returns
-    // the closest obstacle that intersects with lookahead.
-    findMostThreateningObstacle = function(pos, lookahead) {
-      var mostThreatening = null;
-      var spikelocations = this.getspikes();
-      var ray = lookahead.sub(pos).normalize();
-      // Length looking ahead.
-      var dist_ahead = lookahead.dist(pos);
-      for (var i = 0; i < spikelocations.length; i++) {
-        var spike = spikelocations[i];
-        var collision = lineIntersectsCircle(pos, ray, spike);
-
-        if (collision && collision < dist_ahead && (mostThreatening == null || pos.dist(spike) < pos.dist(mostThreatening))) {
-          mostThreatening = spike;
-        }
-      }
-      return mostThreatening;
-    }.bind(this);
-
-    var MAX_SEE_AHEAD = 30;
+    // ?Number of frames to look ahead?
+    var MAX_SEE_AHEAD = 60;
     var MAX_AVOID_FORCE = 75;
+    var BALL_RADIUS = 38;
     // Ray with current position as basis.
     var position = this._getLocation();
     var ahead = this._getPLocation(MAX_SEE_AHEAD);
+
+    var ray = ahead.sub(position).normalize();
     window.BotEdge2 = new Edge(position, ahead);
-    var mostThreatening = findMostThreateningObstacle(position, ahead);
+
+    var inside = false;
+    var minDist2 = Infinity;
+    var spikes = this.getspikes();
+    var spike, collision, minCollision, dist;
+    for (var i = 0; i < spikes.length; i++) {
+      spike = spikes[i];
+      collision = lineIntersectsCircle(position, ray, spike);
+      if (collision.collides) {
+        if (collision.inside) {
+          inside = true;
+          break;
+        } else if (position.dist2(collision.point) < minDist2) {
+          minCollision = collision;
+        }
+      }
+    }
+
     var avoidance = new Point(0, 0);
 
-    if (mostThreatening) {
-      avoidance.x = ahead.x - mostThreatening.x;
-      avoidance.y = ahead.y - mostThreatening.y;
-      avoidance = avoidance.normalize();
-      avoidance = avoidance.mul(MAX_AVOID_FORCE);
+    if (!inside && minDist2 !== Infinity) {
+      avoidance = minCollision.point
+        .add(minCollision.normal.mul(BALL_RADIUS))
+        .sub(position)
+        .normalize()
+        .mul(MAX_AVOID_FORCE);
     }
     return avoidance;
   }
@@ -498,7 +524,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   /**
    * Returns an array of Points that specifies the coordinates of any
    * spikes on the map.
-   * @returns {array} - An array of Point objects representing the
+   * @return {Array.<Point>} - An array of Point objects representing the
    *   coordinates of the spikes.
    */
   Bot.prototype.getspikes = function() {
