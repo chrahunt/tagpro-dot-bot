@@ -1,118 +1,9 @@
-// Based on the botscript by CFlakes.
-requirejs.config({
-  shim: {
-    'map/clipper': {
-      exports: 'ClipperLib'
-    }
-  },
-  waitSeconds: 15
-});
-
-require(['map/parse-map', 'map/navmesh', 'map/polypartition', 'drawutils'],
-function( mapParser,       NavMesh,       pp,                  DrawUtils) {
+define(['map/parse-map', 'map/navmesh', 'map/polypartition', 'drawutils'],
+function(mapParser,       NavMesh,       pp,                  DrawUtils) {
   // Alias useful classes.
   var Point = pp.Point;
   var Poly = pp.Poly;
   var Edge = pp.Edge;
-
-  /**
-   * A Mover is responsible for executing actions within the
-   * environment and managing keypresses.
-   *
-   * To set an agent as a mover, extend its prototype, like
-   *     $.extend(Agent.prototype, new Mover());
-   * @constructor
-   */
-  var Mover = function() {
-    // simPressed will be used to detect if the bot is pressing any keys: right, left, down and up. We define the object (simPressed) here and set the variables to false.
-    // keyWait will be used to check when the last keydown event was sent. This is usefull so the server won't kick you. The wait is separated for x and y keys.
-    this.simPressed = {r: false, l: false, d: false, u: false};
-    this.keyWait = {x: false, y: false};
-
-    // For differently-named viewports on tangent/other servers.
-    var possible_ids = ["viewPort", "viewport"];
-    for (var i = 0; i < possible_ids.length; i++) {
-      var possible_id = possible_ids[i];
-      if ($('#' + possible_id).length > 0) {
-        this.viewport = $('#' + possible_id);
-        break;
-      }
-    }
-    
-    // This is to detect key presses. Both real key presses and the bots. This is needed so we don't mess up the simPressed object.
-    document.onkeydown = this._keyUpdateFunc(true);
-
-    // This is to detect key releases. Both real key releases and the bots. This is needed so we don't mess up the simPressed object.
-    document.onkeyup = this._keyUpdateFunc(false);
-  }
-
-  /**
-   * The sendKey function simulates a keypress on the viewport.
-   * @param {string} direction - The direction to simulate the keypress for.
-   * @param {string} keyState - Whether to press or release, this should
-   * be "keyup" or "keydown".
-   */
-  Mover.prototype.sendKey = function(direction, keyState) {      
-    // Defining the jQuery ($) key event as 'e'.
-    var e = $.Event(keyState);
-    
-    // This switch statement will first check what direction was sent.
-    // Then the if statement under that will check if keyWait is false.
-    // If keyWait is false and a keydown event was sent while that key was not pressed,
-    // or a keyup event was sent while that key was pressed,
-    // assign the correct keycode for the key event and set keyWait to true for 25 miliseconds.
-    switch (direction) {
-      case 'right':
-        if (!this.keyWait.x && ((keyState == 'keydown' && !this.simPressed.r) || (keyState == 'keyup' && this.simPressed.r))) {
-          e.keyCode = 100;
-          this.keyWait.x = true;
-          setTimeout(function() {this.keyWait.x = false;}.bind(this), 25);
-        }
-        break;
-        
-      case 'left':
-        if (!this.keyWait.x && ((keyState == 'keydown' && !this.simPressed.l) || (keyState == 'keyup' && this.simPressed.l))) {
-          e.keyCode = 97;
-          this.keyWait.x = true;
-          setTimeout(function() {this.keyWait.x = false;}.bind(this), 25);
-        }
-        break;
-        
-      case 'down':
-        if (!this.keyWait.y && ((keyState == 'keydown' && !this.simPressed.d) || (keyState == 'keyup' && this.simPressed.d))) {
-          e.keyCode = 115;
-          this.keyWait.y = true;
-          setTimeout(function() {this.keyWait.y = false;}.bind(this), 25);
-        }
-        break;
-        
-      case 'up':
-        if (!this.keyWait.y && ((keyState == 'keydown' && !this.simPressed.u) || (keyState == 'keyup' && this.simPressed.u))) {
-          e.keyCode = 119;
-          this.keyWait.y = true;
-          setTimeout(function() {this.keyWait.y = false;}.bind(this), 25);
-        }
-        break;
-    }
-    
-    // Do the key event, if keyCode was not defined (if the conditions aren't met), nothing will happen.
-    this.viewport.trigger(e);
-  }
-
-  // This returns a callback function to update keys being pressed for document key listener event.
-  Mover.prototype._keyUpdateFunc = function(newState) {
-    return function(d) {
-      d = d || window.event;
-      switch(d.keyCode) {
-        case 39: case 68: case 100: this.simPressed.r = newState; break;
-        case 37: case 65: case 97: this.simPressed.l = newState; break;
-        case 40: case 83: case 115: this.simPressed.d = newState; break;
-        case 38: case 87: case 119: this.simPressed.u = newState; break;
-      }
-    }.bind(this);
-  }
-
-
 
   /**
    * A Bot is responsible for decision making, navigation (with the aid
@@ -129,8 +20,14 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     setTimeout(this.processMap.bind(this), 50);
   };
 
-  // Give move capabilities to Bot.
-  $.extend(Bot.prototype, new Mover());
+  /**
+   * Sets the bot's move functionality.
+   * @param {object} mover - An object with a `move` method that the bot
+   *   will adopt as its own.
+   */
+  Bot.prototype.setMove = function(mover) {
+    this.move = mover.move.bind(mover);
+  }
 
   // Initialize functionality dependent on tagpro provisioning playerId.
   Bot.prototype.init = function() {
@@ -576,28 +473,23 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
    */
   Bot.prototype._update = function(vec) {
     var current = this._getVector(1);
+    var dirs = {};
     if (vec.x < current.x) {
-      this.sendKey('right', 'keyup');
-      this.sendKey('left', 'keydown');
+      dirs.left = true;
     } else {
-      this.sendKey('left', 'keyup');
-      this.sendKey('right', 'keydown');
+      dirs.right = true;
     }
 
     if (vec.y < current.y) {
-      this.sendKey('down', 'keyup');
-      this.sendKey('up', 'keydown');
+      dirs.up = true;
     } else {
-      this.sendKey('up', 'keyup');
-      this.sendKey('down', 'keydown');
+      dirs.down = true;
     }
+    this.move(dirs);
   }
 
   Bot.prototype.allUp = function() {
-    this.sendKey('up', 'keyup');
-    this.sendKey('down', 'keyup');
-    this.sendKey('right', 'keyup');
-    this.sendKey('left', 'keyup');
+    this.move({});
   }
 
   // Get enemy flag coordinates. An object is returned with properties 'point' and 'present'.
@@ -674,22 +566,5 @@ function( mapParser,       NavMesh,       pp,                  DrawUtils) {
     }
   }
 
-  // Start.
-  var bot = new Bot();
-  // Set up UI.
-  $('body').append('<div id="bot-ui"></div>');
-  $('#bot-ui').append('<button id="bot-stop">Stop</button>');
-  $('#bot-ui').append('<button id="bot-start">Start</button>');
-  $('#bot-ui').css('position', 'absolute');
-  $('#bot-ui').css('top', '45px');
-  $('#bot-ui').css('left', '25px');
-
-  $('#bot-stop').click(function(e) {
-    bot.stop();
-  });
-  $('#bot-start').click(function(e) {
-    bot.start();
-  });
-  window.myBot = bot;
-
+  return Bot;
 });
