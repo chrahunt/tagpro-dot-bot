@@ -1,78 +1,6 @@
 define(['map/polypartition'],
 function(pp) {
-  // Drawing functions.
-  // Remap a coordinate relative to the current player position, so it looks static relative
-  // to the background tiles.
-  remap = function(p, context) {
-    return {
-      x: p.x * (1 / tagpro.zoom) - (this.self.x - context.canvas.width / 2),
-      y: p.y * (1 / tagpro.zoom) - (this.self.y - context.canvas.height / 2)
-    }
-  }
-  
-  // Given a polygon, context, and color, draw the outline of the polygon.
-  // color is optional and if not provided, will be black.
-  drawPoly = function(poly, context, color) {
-    if (typeof color == 'undefined') color = 'black';
-    context.beginPath();
-    var start = remap(poly.getPoint(0), context);
-    context.moveTo(start.x, start.y);
-    for (var i = 1; i < poly.numpoints; i++) {
-      var nextPoint = remap(poly.getPoint(i), context);
-      context.lineTo(nextPoint.x, nextPoint.y);
-    }
-    context.lineTo(start.x, start.y);
-    context.lineWidth = 1;
-    context.strokeStyle = color;
-    context.stroke();
-    context.closePath();
-  }
-
-  // Draw a point on the context with a given color. If no color
-  // is provided then black is used.
-  drawPoint = function(point, context, color) {
-    if (color == 'undefined') color = 'black';
-    point = remap(point, context);
-    var radius = 5;
-    context.beginPath();
-    context.arc(point.x, point.y, radius, 0, 2 * Math.PI, false);
-    context.fillStyle = color;
-    context.fill();
-    context.lineWidth = 5;
-    context.strokeStyle = color;
-    context.stroke();
-  }
-
-  // Draw an edge on the context with a given color. If no color is
-  // provided then black is used.
-  drawLine = function(edge, context, color) {
-    if (typeof color == 'undefined') color = 'black';
-    var p1 = remap(edge.p1, context);
-    var p2 = remap(edge.p2, context);
-    var radius = 5;
-    context.beginPath();
-    context.moveTo(p1.x, p1.y);
-    context.lineTo(p2.x, p2.y);
-    context.lineWidth = 3;
-    context.strokeStyle = color;
-    context.stroke();
-    context.closePath();
-  }
-
-  // Takes in an item, item can be an array, in which case all of the
-  // contained elements will be drawn.
-  // Types of contained elements can be Poly, Edge, or Point.
-  draw = function(item, color) {
-    if (item instanceof Array) {
-      item.forEach(function(i) {
-        draw(i);
-      });
-    } else if (item instanceof Poly) {
-      drawPoly
-    }
-  }
-
-  /*
+  /**
    * DrawUtils holds canvas-drawing responsibility, including keeping track of
    * what items are to be drawn on the canvas as well as how to actually do it.
    * To add an item to be drawn, simply register it using the register function,
@@ -87,102 +15,150 @@ function(pp) {
 
   // Initialize drawing functions.
   DrawUtils.prototype.init = function() {
-    // Set current player information so drawings can be done relative
-    // to player position.
+    if (typeof tagpro.renderer == "undefined") {
+      console.log("Can't handle old canvas!");
+      return;
+    }
+
     this.self = tagpro.players[tagpro.playerId];
 
-    // Store original draw function.
-    this.ui_draw = tagpro.ui.draw;
-
     // Store items to be drawn.
-    this.drawings = new Set();
+    this.vectors = {};
+    this.backgrounds = {};
 
-    // Holds a set of strings defining the properties under which 
-    window.BotDrawings = this.drawings;
+    // Add vectors container to player sprites object.
+    this.self.sprites.vectors = new PIXI.Graphics();
+    this.self.sprite.addChild(this.self.sprites.vectors);
 
-    // Handle possibility of Pixi.js-based renderer.
-    if (typeof tagpro.renderer !== 'undefined') {
-      this.pixi();
-      return;
-    } else {
-      // Actually set everything up.
-      this._setDraw();
+    // Center vectors on player.
+    this.self.sprites.vectors.position.x = 20;
+    this.self.sprites.vectors.position.y = 20;
+  }
+
+  /**
+   * Adds a vector to be drawn over the current player.
+   * @param {string} name - The name used to refer to the vector.
+   * @param {number} [color=0x000000] - The color used when drawing the
+   *   vector.
+   */
+  DrawUtils.prototype.addVector = function(name, color) {
+    var vector = {
+      name: name,
+      container: new PIXI.Graphics(),
+      color: color || 0x000000
     }
+    this.vectors[name] = vector;
+    this.self.sprites.vectors.addChild(vector.container);
   }
 
-  // Register another window property to look for.
-  DrawUtils.prototype.register = function(name) {
-    this.drawings.add(name);
+  /**
+   * Updates the vector identified with `name` with the values from
+   * point `p`.
+   * @param {string} name - The name of the vector to update.
+   * @param {Point} p - The point to use to update the vector.
+   */
+  DrawUtils.prototype.updateVector = function(name, p) {
+    this.vectors[name].x = p.x;
+    this.vectors[name].y = p.y;
+    this._drawVector(this.vectors[name]);
   }
 
-  // Remove an item from being drawn.
-  DrawUtils.prototype.unregister = function(name) {
-    this.drawings.delete(name);
+  DrawUtils.prototype.hideVector = function(name) {
+    this.vectors[name].container.visible = false;
   }
 
-  DrawUtils.prototype._setDraw = function() {
-    drawItem = function(item, context, color) {
-      if (item instanceof Poly) {
-        drawPoly(item, context, color);
-      } else if (item instanceof Point) {
-        drawPoint(item, context, color);
-      } else if (item instanceof Edge) {
-        drawLine(item, context, color);
-      }
+  DrawUtils.prototype.showVector = function(name) {
+    this.vectors[name].container.visible = true;
+  }
+
+  /**
+   * Add navmesh polys to background.
+   */
+  DrawUtils.prototype.addBackground = function(name, color) {
+    var background = {
+      color: color,
+      container: new PIXI.Graphics()
     }
-
-    var ui_draw = this.ui_draw;
-    
-    tagpro.ui.draw = function(context) {
-      var color, item;
-      context.save();
-      context.globalAlpha = 1;
-
-      if (window.hasOwnProperty('BotDrawings')) {
-        window.BotDrawings.forEach(function(drawing) {
-          if (window.hasOwnProperty(drawing)) {
-            drawing = window[drawing];
-            if (typeof drawing == 'undefined') return;
-            if (drawing instanceof Array) {
-              drawing.forEach(function(d) {
-                color = d.color;
-                item = d.item;
-                drawItem(item, context, color);
-              });
-            } else {
-              color = drawing.color;
-              item = drawing.item;
-              drawItem(item, context, color);
-            }
-          }
-        });
-      }
-      
-      // Restore tagpro.ui.draw and apply our changes.
-      return ui_draw.apply(this, arguments);
-    };
+    // Add background as child of background layer.
+    tagpro.renderer.layers.background.addChild(background.container);
+    this.backgrounds[name] = background;
   }
 
-  // Handle PIXI.js renderer
-  DrawUtils.prototype.pixi = function() {
-    // navmesh rendering.
-    // Create initial graphics from navmesh, create texture from it, set as child of tagpro background renderer.
-    var mesh_polys = window.BotMeshShapes;
-    if (typeof mesh_polys == 'undefined') {
-      // Try again later.
-      setTimeout(this.pixi.bind(this), 50);
-      return;
-    }
-    var mesh_shapes = mesh_polys.map(function(poly_info) {
-      return this._convertPolyToPixiPoly(poly_info.item);
+  DrawUtils.prototype.updateBackground = function(name, polys) {
+    this.backgrounds[name].polys = polys;
+    this._drawBackground(this.backgrounds[name]);
+  }
+
+  /**
+   * Draw a vector, given attributes
+   * @param {Vector} vector
+   */
+  DrawUtils.prototype._drawVector = function(vector) {
+    var v = new Point(vector.x, vector.y);
+    var v_n = v.normalize();
+    if (v.len() < 2) return;
+    var vectorWidth = 4;
+    // For arrowhead.
+    var vectorAngle = Math.atan2(v.y, v.x);
+    var headAngle = Math.PI / 6;
+    var headLength = 10;
+    var leftHead = (new Point(
+      Math.cos((Math.PI - headAngle + vectorAngle) % (2 * Math.PI)),
+      Math.sin((Math.PI - headAngle + vectorAngle) % (2 * Math.PI))));
+    leftHead = leftHead.mul(headLength).add(v);
+    var rightHead = (new Point(
+      Math.cos((Math.PI + headAngle + vectorAngle) % (2 * Math.PI)),
+      Math.sin((Math.PI + headAngle + vectorAngle) % (2 * Math.PI))));
+    rightHead = rightHead.mul(headLength).add(v);
+    // For fat vector body.
+    var leftBase = (new Point(
+      Math.cos((Math.PI / 2 + vectorAngle) % (2 * Math.PI)),
+      Math.sin((Math.PI / 2 + vectorAngle) % (2 * Math.PI))));
+    var rightBase = leftBase.mul(-1);
+
+    leftBase = leftBase.mul(vectorWidth / 2);
+    rightBase = rightBase.mul(vectorWidth / 2);
+    var end = v_n.mul(v_n.dot(leftHead));
+    var leftTop = leftBase.add(end);
+    var rightTop = rightBase.add(end);
+
+    // Add shapes to container.
+    var c = vector.container;
+    c.clear();
+    c.lineStyle(2, 0x000000, 1);
+    c.beginFill(vector.color, 1);
+    c.moveTo(leftBase.x, leftBase.y);
+    c.lineTo(leftTop.x, leftTop.y);
+    c.lineTo(leftHead.x, leftHead.y);
+    c.lineTo(v.x, v.y);
+    c.lineTo(rightHead.x, rightHead.y);
+    c.lineTo(rightTop.x, rightTop.y);
+    c.lineTo(rightBase.x, rightBase.y);
+    var v_n_l = v_n.mul(vectorWidth / 2);
+    var cp1 = rightBase.sub(v_n_l);
+    var cp2 = leftBase.sub(v_n_l);
+    c.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, leftBase.x, leftBase.y);
+    c.endFill();
+  }
+
+  /**
+   * Redraw background in background container given a background
+   * object.
+   * @param {Background} background - The background to draw.
+   */
+  DrawUtils.prototype._drawBackground = function(background) {
+    var bg = background;
+
+    var polys = background.polys.map(function(poly) {
+      return this._convertPolyToPixiPoly(poly);
     }, this);
 
-    var mesh = new PIXI.Graphics();
-    mesh.lineStyle(1, 0x000000, 1);
-    mesh_shapes.forEach(function(shape) {
-      mesh.drawShape(shape);
+    
+    bg.container.clear();
+    bg.container.lineStyle(1, bg.color, 1);
+    polys.forEach(function(shape) {
+      bg.container.drawShape(shape);
     });
-    tagpro.renderer.gameContainer.addChild(mesh);
   }
 
   DrawUtils.prototype._convertPolyToPixiPoly = function(poly) {

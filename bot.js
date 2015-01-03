@@ -35,9 +35,8 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     // Ensure that the tagpro global object has initialized and allocated us an id.
     if (typeof tagpro !== 'object' || !tagpro.playerId) {return setTimeout(this.init.bind(this), 250);}
 
-    // self is your player object.
+    // Self is the TagPro player object.
     this.self = tagpro.players[tagpro.playerId];
-    window.self = this.self;
     this.playerId = tagpro.playerId;
 
     // getAcc function set as an interval loop.
@@ -52,11 +51,9 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     this.draw = new DrawUtils();
 
     // Register items to draw.
-    this.draw.register("BotMeshShapes");
-    this.draw.register("BotGoal");
-    this.draw.register("BotEdge2");
-    this.draw.register("BotVectors");
-    this.draw.register("BotEdge");
+    this.draw.addVector("seek", 0x00ff00);
+    this.draw.addVector("avoid", 0xff0000);
+    this.draw.addBackground("mesh", 0x000000);
 
     this.initialized = true;
   }
@@ -71,11 +68,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     this.navmesh = new NavMesh(polys);
     this.mapInitialized = true;
 
-    // For drawing mesh.
-    var mesh_items = this.navmesh.polys.map(function(poly) {
-      return {item: poly, color: 'black'}
-    });
-    window.BotMeshShapes = mesh_items;
+    this.draw.updateBackground("mesh", this.navmesh.polys);
     Logger.log("bot", "Navmesh constructed.");
   }
 
@@ -97,6 +90,8 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     Logger.log("bot", "Starting bot.");
     this.stopped = false;
     this._setInterval("game", this._gameUpdate, 1000);
+    this.draw.showVector("seek");
+    this.draw.showVector("avoid");
   }
 
   /**
@@ -111,10 +106,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     // Get desired vectors.
     var seek_vec, avoid_vec;//, nav_vec;
 
-    window.BotVectors = [];
-
     if (this.goal) {
-      window.BotGoal = this.goal;
       seek_vec = this._seek(this.goal);
     } else {
       seek_vec = new Point(0, 0);
@@ -133,10 +125,10 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     desired_vector = desired_vector.add(avoid_vec);
     //desired_vector = desired_vector.add(nav_vec);
 
-    // Add vectors to window object for visualizations.
-    window.BotVectors.push({item: new Edge(me, me.add(seek_vec)), color: 'green'});
-    window.BotVectors.push({item: new Edge(me, me.add(avoid_vec)), color: 'red'});
-    //window.BotVectors.push({edge: new Edge(me, me.add(nav_vec)), color: 'blue'});
+    // Update vector visuals.
+    this.draw.updateVector("seek", seek_vec);
+    this.draw.updateVector("avoid", avoid_vec);
+    //this.draw.updateVector("nav", nev_vec);
 
     // Apply desired vector after a short delay.
     setTimeout(function() {
@@ -186,7 +178,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
       this.navmesh.calculatePath(start, destination, function(path) {
         this._updatePath(path);
         this._setInterval('navigate', this.navigate, 10);
-        this._setInterval('path', this._pathUpdate, 500);
+        //this._setInterval('path', this._pathUpdate, 500);
         this._setInterval('goal', this._goalUpdate, 20);
       }.bind(this));
     } else { // Yellow center flag game.
@@ -349,10 +341,8 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   }
 
   Bot.prototype._removeDraw = function() {
-    delete window.BotGoal;
-    delete window.BotEdge;
-    delete window.BotEdge2;
-    delete window.BotVectors;
+    this.draw.hideVector("seek");
+    this.draw.hideVector("avoid");
   }
 
   /**
@@ -490,7 +480,6 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     var ahead = this._getPLocation(MAX_SEE_AHEAD);
 
     var ray = ahead.sub(position).normalize();
-    window.BotEdge2 = new Edge(position, ahead);
 
     var inside = false;
     var minDist2 = Infinity;
