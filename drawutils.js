@@ -26,6 +26,7 @@ function(pp) {
     this.vectors = {};
     this.backgrounds = {};
     this.points = {};
+    this.circles = {};
 
     // Add vectors container to player sprites object.
     this.self.sprites.vectors = new PIXI.Graphics();
@@ -91,7 +92,60 @@ function(pp) {
   }
 
   /**
-   * Add a point to be drawn on the screen.
+   * Add circle to be drawn on the screen.
+   */
+  DrawUtils.prototype.addCircle = function(name, radius, color) {
+    var circle = {
+      color: color,
+      radius: radius,
+      container: new PIXI.Graphics()
+    }
+    tagpro.renderer.layers.foreground.addChild(circle.container);
+    this.circles[name] = circle;
+  }
+
+  DrawUtils.prototype.updateCircle = function(name, point) {
+    this.circles[name].center = point;
+    this._drawCircle(this.circles[name]);
+  };
+
+  DrawUtils.prototype._drawCircle = function(circle) {
+    var c = circle;
+
+    c.container.clear();
+    c.container.lineStyle(1, c.color, 1);
+    c.container.drawCircle(c.center.x, c.center.y, c.radius);
+  };
+
+  /**
+   * Represents a point to be drawn on the screen, along with information
+   * about how to draw it.
+   * @typedef PointInfo
+   * @type {object}
+   * @property {number} color - The fill color for the point.
+   * @property {PIXI.Graphics} container - The container on which to
+   *   draw the point.
+   * @property {string} layer - The layer on which to draw the point,
+   *   can be any layer identified in `tagpro.renderer.layers`.
+   * @property {?Point} point - The location to draw the point. May
+   *   be null as it is not initially set.
+   */
+
+  /**
+   * Represents a set of points to be drawn on the screen, along with
+   * information about how to draw them.
+   * @typedef PointsInfo
+   * @type {object}
+   * @property {number} color - The fill color for the point.
+   * @property {PIXI.Graphics} container - The container on which to
+   *   draw the point.
+   * @property {string} layer - The layer on which to draw the point,
+   *   can be any layer identified in `tagpro.renderer.layers`.
+   */
+
+  /**
+   * Add an identifier for a point or set of points to be drawn on the
+   * screen.
    * @param {string} name - The name to identify the point.
    * @param {integer} color - The number identifying the color to use.
    * @param {string} [layer="background"] - A string identifying the
@@ -119,8 +173,40 @@ function(pp) {
   }
 
   /**
-   * Draw a vector, given attributes
-   * @param {Vector} vector
+   * Update the location of a set point to be drawn on the screen.
+   * @param {string} name - The name of the point to update.
+   * @param {Array.<Point>} points - The set of updated points.
+   */
+  DrawUtils.prototype.updatePoints = function(name, points) {
+    this.points[name].points = points;
+    this._drawPoints(this.points[name]);
+  }
+
+  DrawUtils.prototype.hidePoint = function(name) {
+    this.points[name].container.visible = false;
+  }
+
+  /**
+   * Represents a 2d vector emanating from the center of the player,
+   * along with attributes for drawing.
+   * @typedef VectorInfo
+   * @type {object}
+   * @property {string} name - An identifier for the vector (unique
+   *   relative to the other vectors.)
+   * @property {PIXI.Graphics} container - The graphics container to
+   *   draw the vector on.
+   * @property {integer} color - Number representing color to use (e.g.
+   *   0x000000.)
+   * @property {?number} [x] - Number representing the x coordinate of
+   *   the vector, relative to the center of the player.
+   * @property {?number} [y] - Number representing the y coordinate of
+   *   the vector, relative to the center of the player.
+   */
+  /**
+   * Draw a vector as a small arrow based at the center of the current
+   * player.
+   * @private
+   * @param {VectorInfo} vector
    */
   DrawUtils.prototype._drawVector = function(vector) {
     var v = new Point(vector.x, vector.y);
@@ -178,7 +264,7 @@ function(pp) {
   /**
    * Redraw background in background container given a background
    * object.
-   * @param {Background} background - The background to draw.
+   * @param {BackgroundInfo} background - The background to draw.
    */
   DrawUtils.prototype._drawBackground = function(background) {
     var bg = background;
@@ -197,6 +283,7 @@ function(pp) {
 
   /**
    * Draw a point, given a point to draw.
+   * @private
    * @param {PointInfo} point - The point to draw.
    */
   DrawUtils.prototype._drawPoint = function(point) {
@@ -207,6 +294,25 @@ function(pp) {
     p.container.beginFill(point.color, 1);
     p.container.drawCircle(p.point.x, p.point.y, 3);
     p.container.endFill();
+    p.container.visible = true;
+  }
+
+  /**
+   * Draw a set of points, given information about them.
+   * @private
+   * @param {PointsInfo} points - The points to draw.
+   */
+  DrawUtils.prototype._drawPoints = function(points) {
+    var p = points;
+
+    p.container.clear();
+    p.container.lineStyle(1, 0x000000, 1);
+    p.container.beginFill(p.color, 1);
+    p.points.forEach(function(point) {
+      p.container.drawCircle(point.x, point.y, 3);
+    });
+    p.container.endFill();
+    p.container.visible = true;
   }
 
   DrawUtils.prototype._convertPolyToPixiPoly = function(poly) {
