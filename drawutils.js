@@ -25,6 +25,7 @@ function(pp) {
     // Store items to be drawn.
     this.vectors = {};
     this.backgrounds = {};
+    this.points = {};
 
     // Add vectors container to player sprites object.
     this.self.sprites.vectors = new PIXI.Graphics();
@@ -90,13 +91,46 @@ function(pp) {
   }
 
   /**
+   * Add a point to be drawn on the screen.
+   * @param {string} name - The name to identify the point.
+   * @param {integer} color - The number identifying the color to use.
+   * @param {string} [layer="background"] - A string identifying the
+   *   layer to draw the point on.
+   */
+  DrawUtils.prototype.addPoint = function(name, color, layer) {
+    if (typeof layer == "undefined") layer = "background";
+    var point = {
+      color: color,
+      container: new PIXI.Graphics(),
+      layer: layer
+    }
+    tagpro.renderer.layers[layer].addChild(point.container);
+    this.points[name] = point;
+  }
+
+  /**
+   * Update the location of a point to be drawn on the screen.
+   * @param {string} name - The name of the point to update.
+   * @param {Point} point - The information about the point.
+   */
+  DrawUtils.prototype.updatePoint = function(name, point) {
+    this.points[name].point = point;
+    this._drawPoint(this.points[name]);
+  }
+
+  /**
    * Draw a vector, given attributes
    * @param {Vector} vector
    */
   DrawUtils.prototype._drawVector = function(vector) {
     var v = new Point(vector.x, vector.y);
     var v_n = v.normalize();
-    if (v.len() < 2) return;
+    if (v.len() < 2) {
+      this.hideVector(vector.name);
+      return;
+    } else {
+      this.showVector(vector.name);
+    }
     var vectorWidth = 4;
     // For arrowhead.
     var vectorAngle = Math.atan2(v.y, v.x);
@@ -159,6 +193,20 @@ function(pp) {
     polys.forEach(function(shape) {
       bg.container.drawShape(shape);
     });
+  }
+
+  /**
+   * Draw a point, given a point to draw.
+   * @param {PointInfo} point - The point to draw.
+   */
+  DrawUtils.prototype._drawPoint = function(point) {
+    var p = point;
+
+    p.container.clear();
+    p.container.lineStyle(1, 0x000000, 1);
+    p.container.beginFill(point.color, 1);
+    p.container.drawCircle(p.point.x, p.point.y, 3);
+    p.container.endFill();
   }
 
   DrawUtils.prototype._convertPolyToPixiPoly = function(poly) {

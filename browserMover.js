@@ -1,3 +1,6 @@
+/**
+ * @module mover/browser
+ */
 define(function() {
   /**
    * The Mover is responsible for executing actions within the
@@ -6,6 +9,7 @@ define(function() {
    * To set an agent as a mover, extend its prototype, like
    *     $.extend(Agent.prototype, new Mover());
    * @constructor
+   * @alias module:mover/browser
    */
   var Mover = function() {
     // Tracks active movement directions.
@@ -47,7 +51,7 @@ define(function() {
 
   /**
    * Sets the state of movement directions to that indicated by the
-   * state parameter. If a direction is omitted from the object then
+   * `state` parameter. If a direction is omitted from the object then
    * it will be assumed `false` and the keys corresponding to that
    * movement direction will be 'released'.
    * @param {DirHash} state - The desired movement direction states.

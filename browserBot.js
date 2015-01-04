@@ -12,6 +12,12 @@ requirejs.config({
   waitSeconds: 20
 });
 
+/**
+ * The Browser Agent is an implementation of the TagPro agent meant
+ * to run in the browser.
+ *
+ * @module agent/browser
+ */
 require(['bot', 'browserMover'],
 function( Bot,   Mover) {
   // Start.
