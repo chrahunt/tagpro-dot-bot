@@ -60,15 +60,19 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     this.draw.addVector("seek", 0x00ff00);
     this.draw.addVector("avoid", 0xff0000);
     this.draw.addBackground("mesh", 0x000000);
-    this.draw.addPoint("goal", 0xff0000);
-    this.draw.addPoint("hit", 0x0000bb);
+    this.draw.addPoint("goal", 0x00ff00, "foreground");
+    this.draw.addPoint("hit", 0xff0000, "foreground");
 
     // Configurable parameters for various aspects of operation.
     this.parameters = {};
 
     // Holds information about the game physics parameters.
     this.parameters.game = {
-      step: 1e3 / 60
+      step: 1e3 / 60, // Physics step size in ms.
+      radius: {
+        spike: 14,
+        ball: 19
+      }
     };
 
     // Holds interval update timers.
@@ -85,9 +89,10 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     };
 
     this.parameters.steering["avoid"] = {
-      max_see_ahead: 240,
+      max_see_ahead: 2e3, // Time in ms to look ahead for a collision.
       max_avoid_force: 35,
-      buffer: 5
+      buffer: 5,
+      spike_intersection_radius: this.parameters.game.radius.spike + this.parameters.game.radius.ball
     };
     this.parameters.steering["update"] = {
       action_threshold: 0.01,
@@ -194,6 +199,8 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
       this._clearInterval('navigate');
       this._clearInterval('path');
       this._clearInterval('goal');
+      // Nor do they press buttons.
+      this.allUp();
       return;
     }
 
@@ -309,7 +316,8 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
    */
   Bot.prototype._updatePath = function(path) {
     if (typeof path !== "undefined") {
-      this.path = path;
+      // Map path to location of ball center.
+      this.path = path.map(function(p) {return p.add(20);});
     }
   }
 
@@ -401,34 +409,38 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
    * @returns {Point} - The predicted x, y coordinates.
    */
   Bot.prototype._getPredictedLocation = function(steps) {
-    if (typeof multiplier == 'undefined') steps = 60;
+    if (typeof steps == 'undefined') steps = 60;
     var time = (1 / 60) * steps;
     var cv = this._getPredictedVelocity(0);
-    var pv = this._getPredictedVelocity(steps);
+    // Bound the predicted velocity 
+    var pv = this._getPredictedVelocity(1);
     var current_location = this._getLocation();
-    var px = current_location.x;
-    var py = current_location.y;
+    var dx = 0;
+    var dy = 0;
 
     if (Math.abs(pv.x) == this.self.ms) {
       // Find point that max velocity was reached.
       var step = Math.abs(pv.x - cv.x) / this.self.ac;
       var accTime = step * (1 / 60);
-      px += accTime * ((pv.x + cv.x) / 2);
-      px += (time - accTime) * pv.x;
+      dx += accTime * ((pv.x + cv.x) / 2);
+      dx += (time - accTime) * pv.x;
     } else {
-      px += time * ((pv.x + cv.x) / 2);
+      dx += time * ((pv.x + cv.x) / 2);
     }
 
     if (Math.abs(pv.y) == this.self.ms) {
       var step = Math.abs(pv.y - cv.y) / this.self.ac;
       var accTime = step * (1 / 60);
-      py += accTime * ((pv.y + cv.y) / 2);
-      py += (time - accTime) * pv.y;
+      dy += accTime * ((pv.y + cv.y) / 2);
+      dy += (time - accTime) * pv.y;
     } else {
-      py += time * ((pv.y + cv.y) / 2);
+      dy += time * ((pv.y + cv.y) / 2);
     }
+    var dl = new Point(dx, dy);
+    // Convert from physics units to x, y coordinates.
+    dl = dl.mul(40); // WHAT?
 
-    return new Point(px, py);
+    return current_location.add(dl);
   }
 
   // Get current location as a point.
@@ -438,7 +450,8 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
 
   /**
    * Get predicted velocity a number of steps into the future based on
-   * current velocity, acceleration, and max velocity.
+   * current velocity, acceleration, max velocity, and the keys being
+   * pressed.
    * @param {number} [steps=0] - How many steps in the future to predict
    *   the velocity for. A value of 0 returns the current velocity bounded
    *   by the maximum velocity.
@@ -505,7 +518,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     var MAX_SEE_AHEAD = params.max_see_ahead;
     var MAX_VELOCITY = this.self.ms;
 
-    // Get your predicted position using location + speed * 60.
+    // Get the predicted position.
     var prediction = this._getPredictedLocation(this._msToSteps(MAX_SEE_AHEAD));
 
     var steering = new Point(0, 0);
@@ -574,10 +587,10 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
         // Point is inside obstacle.
         collision.collides = true;
         collision.inside = (vpc.len() !== radius);
-      } else if (c.dot(ray) >= 0) {
+      } else {
         // Circle is ahead of or in-line with point.
         // Projection of center point onto ray.
-        var pc = p.add(ray.mul(ray.dot(vpc) / ray.len()));
+        var pc = p.add(ray.mul(ray.dot(vpc)));
         // Length from c to its projection on the ray.
         var len_c_pc = c.sub(pc).len();
 
@@ -594,14 +607,15 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     }.bind(this);
 
     var params = this.parameters.steering["avoid"];
-    // ?Number of frames to look ahead?
+    // Number of ms to look ahead.
     var MAX_SEE_AHEAD = params.max_see_ahead;
     var MAX_VELOCITY = this.self.ms;
     var BUFFER = params.buffer;
     var BALL_DIAMETER = 38;
+    var SPIKE_INTERSECTION_RADIUS = params.spike_intersection_radius;
     // Ray with current position as basis.
     var position = this._getLocation();
-    var ahead = this._getPredictedLocation(MAX_SEE_AHEAD);
+    var ahead = this._getPredictedLocation(this._msToSteps(MAX_SEE_AHEAD));
     var ahead_distance = ahead.sub(position).len();
 
     var ray = ahead.sub(position).normalize();
@@ -612,7 +626,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     var spike, collision, minCollision, dist;
     for (var i = 0; i < spikes.length; i++) {
       spike = spikes[i];
-      collision = lineIntersectsCircle(position, ray, spike);
+      collision = lineIntersectsCircle(position, ray, spike, SPIKE_INTERSECTION_RADIUS);
       if (collision.collides) {
         if (collision.inside) {
           inside = true;
@@ -629,12 +643,14 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
 
     var avoidance = new Point(0, 0);
 
-    if (!inside && minDist2 < ahead_distance) {
+    if (!inside && Math.sqrt(minDist2) < ahead_distance) {
       avoidance = minCollision.point
-        .add(minCollision.normal.mul((BALL_DIAMETER / 2) + BUFFER))
+        .add(minCollision.normal.mul((this.parameters.game.radius.ball) + BUFFER))
         .sub(position)
         .normalize();
       this.draw.updatePoint("hit", minCollision.point);
+    } else {
+      this.draw.hidePoint("hit");
     }
     return this._scaleVector(avoidance, MAX_VELOCITY);
   }
@@ -669,6 +685,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
    * @param {Point} vec - The desired velocity.
    */
   Bot.prototype._update = function(vec) {
+    if (vec.x == 0 && vec.y == 0) return;
     var params = this.parameters.steering["update"];
     // The cutoff for the difference between a desired velocity and the
     // current velocity is small enough that no action needs to be taken.
