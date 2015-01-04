@@ -1,14 +1,19 @@
+/**
+ * A Bot is responsible for decision making, navigation (with the aid
+ * of map-related modules) and low-level steering/locomotion.
+ * @module bot
+ */
 define(['map/parse-map', 'map/navmesh', 'map/polypartition', 'drawutils', 'bragi'],
 function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logger) {
   // Alias useful classes.
   var Point = pp.Point;
   var Poly = pp.Poly;
   var Edge = pp.Edge;
+  var PolyUtils = pp.PolyUtils;
 
   /**
-   * A Bot is responsible for decision making, navigation (with the aid
-   * of map-related modules) and low-level steering/locomotion.
    * @constructor
+   * @alias module:bot
    */
   var Bot = function() {
     // Holds interval ids.
@@ -17,6 +22,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     this.initialized = false;
     this.mapInitialized = false;
     this.init();
+
     setTimeout(this.processMap.bind(this), 50);
   };
 
@@ -54,6 +60,40 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     this.draw.addVector("seek", 0x00ff00);
     this.draw.addVector("avoid", 0xff0000);
     this.draw.addBackground("mesh", 0x000000);
+    this.draw.addPoint("goal", 0xff0000);
+    this.draw.addPoint("hit", 0x0000bb);
+
+    // Configurable parameters for various aspects of operation.
+    this.parameters = {};
+
+    // Holds information about the game physics parameters.
+    this.parameters.game = {
+      step: 1e3 / 60
+    };
+
+    // Holds interval update timers.
+    this.parameters.intervals = {
+      game: 1000,
+      navigate: 10,
+      goal: 10
+    };
+
+    // Hold steering parameters.
+    this.parameters.steering = {};
+    this.parameters.steering["seek"] = {
+      max_see_ahead: this.parameters.intervals.navigate
+    };
+
+    this.parameters.steering["avoid"] = {
+      max_see_ahead: 240,
+      max_avoid_force: 35,
+      buffer: 5
+    };
+    this.parameters.steering["update"] = {
+      action_threshold: 0.01,
+      top_speed_threshold: 0.1,
+      current_vector: 0
+    };
 
     this.initialized = true;
   }
@@ -125,9 +165,9 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     desired_vector = desired_vector.add(avoid_vec);
     //desired_vector = desired_vector.add(nav_vec);
 
-    // Update vector visuals.
-    this.draw.updateVector("seek", seek_vec);
-    this.draw.updateVector("avoid", avoid_vec);
+    // Update vector visuals, scaling from physics units to screen size.
+    this.draw.updateVector("seek", seek_vec.mul(10));
+    this.draw.updateVector("avoid", avoid_vec.mul(10));
     //this.draw.updateVector("nav", nev_vec);
 
     // Apply desired vector after a short delay.
@@ -244,6 +284,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
 
     // Update bot state.
     this.goal = goal;
+    this.draw.updatePoint("goal", goal);
     this.path = path;
   }
 
@@ -264,6 +305,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   /**
    * This function is used as the callback to navmesh.calculatePath,
    * to update the bot's view of the path if found.
+   * @private
    */
   Bot.prototype._updatePath = function(path) {
     if (typeof path !== "undefined") {
@@ -271,6 +313,9 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     }
   }
 
+  /*
+   * Update acceleration of players for better tracking.
+   */
   Bot.prototype.getAcc = function() {
     // 'for in' loop to loop through players.
     for (var id in tagpro.players) {
@@ -306,7 +351,11 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     }
   }
 
-  // Clear the interval given by function name.
+  /**
+   * Clear the interval identified by `name`.
+   * @private
+   * @param {string} name - The interval to clear.
+   */
   Bot.prototype._clearInterval = function(name) {
     if (this._isInterval(name)) {
       clearInterval(this.actions[name]);
@@ -347,31 +396,101 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
 
   /**
    * Get predicted location based on current position and velocity.
-   * @param {number} [multiplier=60] - How many steps into the future the
+   * @param {number} [steps=60] - How many steps into the future the
    *   prediction will be.
    * @returns {Point} - The predicted x, y coordinates.
    */
-  Bot.prototype._getPLocation = function(multiplier) {
-    if (typeof multiplier == 'undefined') multiplier = 60;
-    var selfX = this.self.x + this.self.lx * multiplier;
-    var selfY = this.self.y + this.self.ly * multiplier;
-    return new Point(selfX, selfY);
+  Bot.prototype._getPredictedLocation = function(steps) {
+    if (typeof multiplier == 'undefined') steps = 60;
+    var time = (1 / 60) * steps;
+    var cv = this._getPredictedVelocity(0);
+    var pv = this._getPredictedVelocity(steps);
+    var current_location = this._getLocation();
+    var px = current_location.x;
+    var py = current_location.y;
+
+    if (Math.abs(pv.x) == this.self.ms) {
+      // Find point that max velocity was reached.
+      var step = Math.abs(pv.x - cv.x) / this.self.ac;
+      var accTime = step * (1 / 60);
+      px += accTime * ((pv.x + cv.x) / 2);
+      px += (time - accTime) * pv.x;
+    } else {
+      px += time * ((pv.x + cv.x) / 2);
+    }
+
+    if (Math.abs(pv.y) == this.self.ms) {
+      var step = Math.abs(pv.y - cv.y) / this.self.ac;
+      var accTime = step * (1 / 60);
+      py += accTime * ((pv.y + cv.y) / 2);
+      py += (time - accTime) * pv.y;
+    } else {
+      py += time * ((pv.y + cv.y) / 2);
+    }
+
+    return new Point(px, py);
   }
 
   // Get current location as a point.
   Bot.prototype._getLocation = function() {
-    return new Point(this.self.x, this.self.y);
+    return new Point(this.self.x + 20, this.self.y + 20);
   }
 
   /**
-   * Get current velocity.
-   * @param {number} [multiplier=60] - How much to scale the
-   *   `lx` and `ly` values.
-   * @returns {Point} - The scaled velocity.
+   * Get predicted velocity a number of steps into the future based on
+   * current velocity, acceleration, and max velocity.
+   * @param {number} [steps=0] - How many steps in the future to predict
+   *   the velocity for. A value of 0 returns the current velocity bounded
+   *   by the maximum velocity.
+   * @returns {Point} - The predicted velocity.
    */
-  Bot.prototype._getVector = function(multiplier) {
-    if (typeof multiplier == 'undefined') multiplier = 60;
-    return new Point(this.self.lx * multiplier, this.self.ly * multiplier);
+  Bot.prototype._getPredictedVelocity = function(steps) {
+    if (typeof steps == 'undefined') steps = 0;
+    var plx, ply;
+    var change_x = 0, change_y = 0;
+    if (this.self.pressing.up) {
+      change_y = -1;
+    } else if (this.self.pressing.down) {
+      change_y = 1;
+    }
+    if (this.self.pressing.left) {
+      change_x = -1;
+    } else if (this.self.pressing.right) {
+      change_x = 1;
+    }
+    plx = this.self.lx + this.self.ac * steps * change_x;
+    plx = Math.sign(plx) * Math.min(Math.abs(plx), this.self.ms);
+    ply = this.self.ly + this.self.ac * steps * change_y;
+    ply = Math.sign(ply) * Math.min(Math.abs(ply), this.self.ms);
+
+    return new Point(plx, ply);
+  }
+
+  /**
+   * Scale a vector so that one of the components is maximized.
+   * @param {Point} vec - The vector to scale.
+   * @param {number} max - The maximum (absolute) value of either component.
+   * @return {Point} - The converted vector.
+   */
+  Bot.prototype._scaleVector = function(vec, max) {
+    var ratio = 0;
+    if (vec.x >= vec.y && vec.x !== 0) {
+      ratio = Math.abs(max / vec.x);
+    } else if (vec.y !== 0) {
+      ratio = Math.abs(max / vec.y);
+    }
+    var scaled = vec.mul(ratio);
+    return scaled;
+  }
+
+  /**
+   * Given a time in ms, return the number of steps needed to represent
+   * that time.
+   * @param {integer} ms - The number of ms.
+   * @return {integer} - The number of steps.
+   */
+  Bot.prototype._msToSteps = function(ms) {
+    return ms / this.parameters.game.step;
   }
 
   /**
@@ -382,14 +501,16 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
    *   current velocity.
    */
   Bot.prototype._seek = function(target) {
-    var MAX_VELOCITY = 30;
+    var params = this.parameters.steering["seek"];
+    var MAX_SEE_AHEAD = params.max_see_ahead;
+    var MAX_VELOCITY = this.self.ms;
 
     // Get your predicted position using location + speed * 60.
-    var prediction = this._getPLocation(5);
+    var prediction = this._getPredictedLocation(this._msToSteps(MAX_SEE_AHEAD));
 
     var steering = new Point(0, 0);
-    var desired_velocity = target.sub(prediction).normalize().mul(MAX_VELOCITY);
-    return desired_velocity;
+    var desired_velocity = target.sub(prediction).normalize();
+    return this._scaleVector(desired_velocity, MAX_VELOCITY);
   }
 
   // Move such that it is more likely the next point along the path will appear.
@@ -418,6 +539,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   // Returns a desired direction vector for avoiding spikes.
   Bot.prototype._avoid = function() {
     /**
+     * Holds the properties of a collision, if one occurred.
      * @typedef Collision
      * @type {object}
      * @property {boolean} collides - Whether there is a collision.
@@ -471,13 +593,16 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
       return collision;
     }.bind(this);
 
+    var params = this.parameters.steering["avoid"];
     // ?Number of frames to look ahead?
-    var MAX_SEE_AHEAD = 60;
-    var MAX_AVOID_FORCE = 75;
-    var BALL_RADIUS = 38;
+    var MAX_SEE_AHEAD = params.max_see_ahead;
+    var MAX_VELOCITY = this.self.ms;
+    var BUFFER = params.buffer;
+    var BALL_DIAMETER = 38;
     // Ray with current position as basis.
     var position = this._getLocation();
-    var ahead = this._getPLocation(MAX_SEE_AHEAD);
+    var ahead = this._getPredictedLocation(MAX_SEE_AHEAD);
+    var ahead_distance = ahead.sub(position).len();
 
     var ray = ahead.sub(position).normalize();
 
@@ -492,22 +617,26 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
         if (collision.inside) {
           inside = true;
           break;
-        } else if (position.dist2(collision.point) < minDist2) {
-          minCollision = collision;
+        } else {
+          var tmpDist2 = position.dist2(collision.point);
+          if (tmpDist2 < minDist2) {
+            minCollision = collision;
+            minDist2 = tmpDist2;
+          }
         }
       }
     }
 
     var avoidance = new Point(0, 0);
 
-    if (!inside && minDist2 !== Infinity) {
+    if (!inside && minDist2 < ahead_distance) {
       avoidance = minCollision.point
-        .add(minCollision.normal.mul(BALL_RADIUS))
+        .add(minCollision.normal.mul((BALL_DIAMETER / 2) + BUFFER))
         .sub(position)
-        .normalize()
-        .mul(MAX_AVOID_FORCE);
+        .normalize();
+      this.draw.updatePoint("hit", minCollision.point);
     }
-    return avoidance;
+    return this._scaleVector(avoidance, MAX_VELOCITY);
   }
 
   /**
@@ -524,7 +653,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
       for (column in tagpro.map) {
         for (tile in tagpro.map[column]) {
           if (tagpro.map[column][tile] == 7) {
-            spikes.push(new Point(40 * column, 40 * tile));
+            spikes.push(new Point(40 * column + 20, 40 * tile + 20));
           }
         }
       }
@@ -540,15 +669,44 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
    * @param {Point} vec - The desired velocity.
    */
   Bot.prototype._update = function(vec) {
-    var current = this._getVector(1);
+    var params = this.parameters.steering["update"];
+    // The cutoff for the difference between a desired velocity and the
+    // current velocity is small enough that no action needs to be taken.
+    var ACTION_THRESHOLD = params.action_threshold;
+    var CURRENT_VECTOR = params.current_vector;
+    var TOP_SPEED_THRESHOLD = params.top_speed_threshold;
+    var current = this._getPredictedVelocity(CURRENT_VECTOR);
+    var topSpeed = this.self.ms;
+    var isTopSpeed = {};
+    // actual speed can vary +- 0.02 of top speed/
+    isTopSpeed.x = Math.abs(topSpeed - Math.abs(current.x)) < TOP_SPEED_THRESHOLD;
+    isTopSpeed.y = Math.abs(topSpeed - Math.abs(current.y)) < TOP_SPEED_THRESHOLD;
     var dirs = {};
-    if (vec.x < current.x) {
+    if (Math.abs(current.x - vec.x) < ACTION_THRESHOLD) {
+      // We're already going fast and we want to keep going fast.
+      if (isTopSpeed.x) {
+        if (current.x > 0) {
+          dirs.right = true;
+        } else {
+          dirs.left = true;
+        }
+      }
+    } else if (vec.x < current.x) {
       dirs.left = true;
     } else {
       dirs.right = true;
     }
 
-    if (vec.y < current.y) {
+    if (Math.abs(current.y - vec.y) < ACTION_THRESHOLD && !isTopSpeed.y) {
+      // We're already going fast and we want to keep going fast.
+      if (isTopSpeed.y) {
+        if (current.y > 0) {
+          dirs.down = true;
+        } else {
+          dirs.up = true;
+        }
+      }
+    } else if (vec.y < current.y) {
       dirs.up = true;
     } else {
       dirs.down = true;
@@ -556,6 +714,9 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     this.move(dirs);
   }
 
+  /**
+   * Stop all movement.
+   */
   Bot.prototype.allUp = function() {
     this.move({});
   }
