@@ -59,7 +59,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     // Register items to draw.
     this.draw.addVector("seek", 0x00ff00);
     this.draw.addVector("avoid", 0xff0000);
-    this.draw.addBackground("mesh", 0x000000);
+    this.draw.addBackground("mesh", 0x00dd00);
     this.draw.addPoint("goal", 0x00ff00, "foreground");
     this.draw.addPoint("hit", 0xff0000, "foreground");
 
