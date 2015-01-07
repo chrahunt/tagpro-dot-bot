@@ -31,6 +31,7 @@ function( Bot,   Mover) {
   $('body').append('<div id="bot-ui"></div>');
   $('#bot-ui').append('<button id="bot-stop">Stop</button>');
   $('#bot-ui').append('<button id="bot-start">Start</button>');
+  $('#bot-ui').append('<button id="stage-off">Turn off stage</button>');
   $('#bot-ui').css('position', 'absolute');
   $('#bot-ui').css('top', '45px');
   $('#bot-ui').css('left', '25px');
@@ -40,6 +41,10 @@ function( Bot,   Mover) {
   });
   $('#bot-start').click(function(e) {
     bot.start();
+  });
+  $('#stage-off').click(function(e) {
+    tagpro.renderer.stage.visible = !tagpro.renderer.stage.visible;
+    $(this).text("Turn " + (tagpro.renderer.stage.visible ? "off" : "on") + " stage");
   });
   window.myBot = bot;
 });
