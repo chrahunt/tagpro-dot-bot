@@ -108,9 +108,9 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     // Ensure that the tagpro global object has initialized and allocated us an id.
     if (typeof tagpro !== 'object' || !tagpro.map) {return setTimeout(this.processMap.bind(this), 250);}
     this.mapTiles = tagpro.map;
-    var polys = mapParser.parse(this.mapTiles);
-    polys = mapParser.convertShapesToPolys(polys);
-    this.navmesh = new NavMesh(polys);
+    var parsedMap = mapParser.parse(this.mapTiles);
+    
+    this.navmesh = new NavMesh(parsedMap);
     this.mapInitialized = true;
 
     this.draw.updateBackground("mesh", this.navmesh.polys);
