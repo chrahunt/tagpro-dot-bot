@@ -91,7 +91,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     this.parameters.steering["avoid"] = {
       max_see_ahead: 2e3, // Time in ms to look ahead for a collision.
       max_avoid_force: 35,
-      buffer: 5,
+      buffer: 25,
       spike_intersection_radius: this.parameters.game.radius.spike + this.parameters.game.radius.ball
     };
     this.parameters.steering["update"] = {
@@ -212,14 +212,14 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
       var enemyFlagPoint = this.findEnemyFlag();
       var ownFlagPoint = this.findOwnFlag();
 
-      var destination, finish_fn;
+      var destination;
       // Check if I have flag.
       var iHaveFlag = this.self.flag;
       // Set destination and end condition.
       if (iHaveFlag) {
-        destination = ownFlagPoint.point;
+        destination = ownFlagPoint.location;
       } else {
-        destination = enemyFlagPoint.point;
+        destination = enemyFlagPoint.location;
       }
 
       this.navmesh.calculatePath(start, destination, function(path) {
@@ -233,8 +233,8 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
       var iHaveFlag = this.self.flag;
       if (!iHaveFlag) {
         var yellow_flag = this.findYellowFlag();
-        if (yellow_flag.present) {
-          var destination = yellow_flag.point;
+        if (yellow_flag.state) {
+          var destination = yellow_flag.location;
           finish_fn = function(bot) {
             return !bot.self.flag;
           }
@@ -315,9 +315,8 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
    * @private
    */
   Bot.prototype._updatePath = function(path) {
-    if (typeof path !== "undefined") {
-      // Map path to location of ball center.
-      this.path = path.map(function(p) {return p.add(20);});
+    if (path) {
+      this.path = path;
     }
   }
 
@@ -438,7 +437,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     }
     var dl = new Point(dx, dy);
     // Convert from physics units to x, y coordinates.
-    dl = dl.mul(40); // WHAT?
+    dl = dl.mul(100);
 
     return current_location.add(dl);
   }
@@ -487,7 +486,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
    */
   Bot.prototype._scaleVector = function(vec, max) {
     var ratio = 0;
-    if (vec.x >= vec.y && vec.x !== 0) {
+    if (Math.abs(vec.x) >= Math.abs(vec.y) && vec.x !== 0) {
       ratio = Math.abs(max / vec.x);
     } else if (vec.y !== 0) {
       ratio = Math.abs(max / vec.y);
@@ -626,6 +625,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     var spike, collision, minCollision, dist;
     for (var i = 0; i < spikes.length; i++) {
       spike = spikes[i];
+      if (spike.dist(position) - SPIKE_INTERSECTION_RADIUS > ahead_distance) continue;
       collision = lineIntersectsCircle(position, ray, spike, SPIKE_INTERSECTION_RADIUS);
       if (collision.collides) {
         if (collision.inside) {
@@ -659,22 +659,26 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
    * Returns an array of Points that specifies the coordinates of any
    * spikes on the map.
    * @return {Array.<Point>} - An array of Point objects representing the
-   *   coordinates of the spikes.
+   *   coordinates of the center of each spike.
    */
   Bot.prototype.getspikes = function() {
     if (this.hasOwnProperty('spikes')) {
       return this.spikes;
     } else {
-      var spikes = new Array();
-      for (column in tagpro.map) {
-        for (tile in tagpro.map[column]) {
-          if (tagpro.map[column][tile] == 7) {
-            spikes.push(new Point(40 * column + 20, 40 * tile + 20));
-          }
-        }
-      }
+      var results = this._findTiles(Tiles.spike);
+      var spikes = results.map(function(result) {
+        return result.location;
+      });
       this.spikes = spikes;
-      window.spikes = spikes;
+      // Debugging, draw circle used for determining spike intersection.
+      this.spikes.forEach(function(spike, i) {
+        this.draw.addCircle(
+          "spike-" + i,
+          this.parameters.steering.avoid.spike_intersection_radius,
+          0xbbbb00
+        );
+        this.draw.updateCircle("spike-" + i, spike);
+      }, this);
       return spikes;
     }
   }
@@ -738,52 +742,114 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     this.move({});
   }
 
+  /**
+   * Translate an array location from `tagpro.map` into a point
+   * representing the x, y coordinates of the top left of the tile,
+   * or the center of the tile if 'center' is true.
+   * @param {integer} row - The row of the tile.
+   * @param {integer} col - The column of the tile.
+   * @return {Point} - The x, y coordinates of the tile.
+   */
+  Bot.prototype._arrayToCoord = function(row, col) {
+    return new Point(40 * row, 40 * col);
+  }
+
   // Get enemy flag coordinates. An object is returned with properties 'point' and 'present'.
   // if flag is present at point then it will be set to true. If no flag is found, then
   // null is returned.
   Bot.prototype.findEnemyFlag = function() {
     // Get flag value.
-    var flagval = (this.self.team + 2 == 4) ? 3 : 4;
-    for (column in tagpro.map) {
-      for (tile in tagpro.map[column]) {
-        if (tagpro.map[column][tile] == flagval || tagpro.map[column][tile] == flagval+0.1) {
-          var point = new Point(40 * column, 40 * tile);
-          var present = (tagpro.map[column][tile] == flagval);
-          return {point: point, present: present};
-        }
-      }
-    }
-    return null;
+    var tile = (this.self.team == Teams.blue ? Tiles.redflag : Tiles.blueflag);
+    return this._findTile(tile);
   }
 
   // Get own flag coordinates. See #findEnemyFlag for details.
   Bot.prototype.findOwnFlag = function() {
-    var flagval = this.self.team + 2;
-    for (column in tagpro.map) {
-      for (tile in tagpro.map[column]) {
-        if (tagpro.map[column][tile] == flagval || tagpro.map[column][tile] == flagval+0.1) {
-          var point = new Point(40 * column, 40 * tile);
-          var present = (tagpro.map[column][tile] == flagval);
-          return {point: point, present: present};
+    var tile = (this.self.team == Teams.blue ? Tiles.blueflag : Tiles.redflag);
+    return this._findTile(tile);
+  }
+
+  /**
+   * Find yellow flag.
+   */
+  Bot.prototype.findYellowFlag = function() {
+    return this._findTile(Tiles.yellowflag);
+  }
+
+  /**
+   * Represents a tile along with its possible values and the value for the 'state' attribute
+   * of the tile result that should be returned from a search.
+   * @typedef Tile
+   * @type {object.<(number|string), *>}
+   */
+  var Tiles = {
+    yellowflag: {16: true, "16.1": false},
+    redflag: {3: true, "3.1": false},
+    blueflag: {4: true, "4.1": false},
+    powerup: {6: false, "6.1": "grip", "6.2": "bomb", "6.3": "tagpro", "6.4": "speed"},
+    bomb: {10: true, "10.1": false},
+    spike: {7: true}
+  };
+
+  var Teams = {
+    red: 1,
+    blue: 2
+  };
+
+  /**
+   * Result of tile search function, contains a location and state.
+   * @typedef TileSearchResult
+   * @type {object}
+   * @property {Point} location - The x, y location of the found tile.
+   * @property {*} state - A field defined by the given tile object and
+   *   the actual value that was matched.
+   */
+
+  /**
+   * Search the map for a tile matching the given tile description, and
+   * return the first one found, or `null` if no such tile is found. The
+   * location in the returned tile results points to the center of the
+   * tile.
+   * @param {Tile} tile - A tile to search for.
+   * @return {?TileSearchResult} - The result of the tile search, or
+   *   null if no tile was found.
+   */
+  Bot.prototype._findTile = function(tile) {
+    // Get keys and convert to numbers
+    var vals = Object.keys(tile).map(function(val) {return +val;});
+    for (var row in tagpro.map) {
+      for (var col in tagpro.map[row]) {
+        if (vals.indexOf(+tagpro.map[row][col]) !== -1) {
+          var loc = this._arrayToCoord(+row, +col).add(20);
+          var state = tile[tagpro.map[row][col]];
+          return {location: loc, state: state};
         }
       }
     }
     return null;
   }
 
-  // Get yellow flag coordinates. See #findEnemyFlag for details.
-  Bot.prototype.findYellowFlag = function() {
-    var flagval = 16;
-    for (column in tagpro.map) {
-      for (tile in tagpro.map[column]) {
-        if (tagpro.map[column][tile] == flagval || tagpro.map[column][tile] == flagval+0.1) {
-          var point = new Point(40 * column, 40 * tile);
-          var present = (tagpro.map[column][tile] == flagval);
-          return {point: point, present: present};
+  /**
+   * Find all tiles in map that match the given tile, and return their
+   * information.
+   * @param {Tile} tile - A tile type to search for the locations of in
+   *   the map.
+   * @return {Array.<TileSearchResult>} - The results of the search, or
+   *   an empty array if no tiles were found.
+   */
+  Bot.prototype._findTiles = function(tile) {
+    var tiles_found = [];
+    var vals = Object.keys(tile).map(function(val) {return +val;});
+    for (var row in tagpro.map) {
+      for (var col in tagpro.map[row]) {
+        if (vals.indexOf(+tagpro.map[row][col]) !== -1) {
+          var loc = this._arrayToCoord(+row, +col).add(20);
+          var state = tile[tagpro.map[row][col]];
+          tiles_found.push({location: loc, state: state});
         }
       }
     }
-    return null;
+    return tiles_found;
   }
 
   // Identify the game time, whether capture the flag or yellow flag.

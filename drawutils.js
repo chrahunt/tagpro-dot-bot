@@ -315,9 +315,12 @@ function(pp) {
     p.container.visible = true;
   }
 
+  /**
+   * @param {Poly} poly
+   */
   DrawUtils.prototype._convertPolyToPixiPoly = function(poly) {
     var point_array = poly.points.reduce(function(values, point) {
-      return values.concat(point.x + 20, point.y + 20);
+      return values.concat(point.x, point.y);
     }, []);
     // Add original point back to point array to resolve Pixi.js rendering issue.
     point_array = point_array.concat(point_array[0], point_array[1]);
