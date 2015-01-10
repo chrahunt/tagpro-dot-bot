@@ -11,6 +11,11 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   var Edge = pp.Edge;
   var PolyUtils = pp.PolyUtils;
 
+  var State = {
+    offense: 0,
+    defense: 1
+  };
+
   /**
    * @constructor
    * @alias module:bot
@@ -59,6 +64,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     // Register items to draw.
     this.draw.addVector("seek", 0x00ff00);
     this.draw.addVector("avoid", 0xff0000);
+    this.draw.addVector("desired", 0x0000ff);
     this.draw.addBackground("mesh", 0x00dd00);
     this.draw.addPoint("goal", 0x00ff00, "foreground");
     this.draw.addPoint("hit", 0xff0000, "foreground");
@@ -145,19 +151,28 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   Bot.prototype.navigate = function() {
     // Don't execute function if bot is stopped.
     if (this.stopped) return;
+    var weights = {
+      avoid: 2,
+      seek: 1
+    };
 
     var me = this._getLocation();
     
-    // Get desired vectors.
-    var seek_vec, avoid_vec;//, nav_vec;
+    var steering_behaviors = [
+      "avoid",
+      "seek"
+    ];
 
+    var vectors = {};
+
+    // Get desired vectors.
     if (this.goal) {
-      seek_vec = this._seek(this.goal);
+      vectors.seek = this._seek(this.goal);
     } else {
-      seek_vec = new Point(0, 0);
+      vectors.seek = new Point(0, 0);
     }
     
-    avoid_vec = this._avoid();
+    vectors.avoid = this._avoid();
     /*if (this.path.length > 1) {
       nav_vec = this._navpath(goal, this.path[1]);
     } else {
@@ -165,21 +180,54 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     }*/
     
     // Calculate desired vector.
-    var desired_vector = new Point(0, 0);
-    desired_vector = desired_vector.add(seek_vec);
-    desired_vector = desired_vector.add(avoid_vec);
-    //desired_vector = desired_vector.add(nav_vec);
-
-    // Update vector visuals, scaling from physics units to screen size.
-    this.draw.updateVector("seek", seek_vec.mul(10));
-    this.draw.updateVector("avoid", avoid_vec.mul(10));
-    //this.draw.updateVector("nav", nev_vec);
-
+    var desired_vector = this.combinedSteering(steering_behaviors, vectors, weights);
+    this.draw.updateVector("desired", desired_vector.mul(10));
     // Apply desired vector after a short delay.
     setTimeout(function() {
-      if (!this.stopped)
+      if (!this.stopped) {
         this._update(desired_vector);
+      }
     }.bind(this), 0);
+  }
+
+  /**
+   * Combines the vectors into a single vector by summing after
+   * multiplying each by their associated weight.
+   * @param {Array.<string>} names - An array specifying the names
+   *   of the vectors.
+   * @param {object.<string, point>} vectors - The calculated vectors.
+   */
+  Bot.prototype.combinedSteering = function(names, vectors, weights) {
+    var desired_vector = new Point(0, 0);
+    names.forEach(function(name) {
+      var weighted_vector = vectors[name].mul(weights[name]);
+      desired_vector = desired_vector.add(weighted_vector);
+      this.draw.updateVector(name, weighted_vector.mul(10));
+    }, this);
+    return this._scaleVector(desired_vector, this.self.ms);
+  }
+
+  /**
+   * Combines the vectors according to their order in names.
+   * Only the first vector with any value returns a value.
+   */
+  Bot.prototype.prioritySteering = function(names, vectors) {
+    var zero = new Point(0, 0);
+    var desired_vector = false;
+    for (var i = 0; i < names.length; i++) {
+      var name = names[i];
+      var vector = vectors[name];
+      if (!vector.zero() && !desired_vector) {
+        desired_vector = vector;
+        this.draw.updateVector(name, vector.mul(10));
+      } else {
+        this.draw.updateVector(name, zero);
+      }
+    }
+    if (!desired_vector) {
+      desired_vector = zero;
+    }
+    return desired_vector;
   }
 
   /**
@@ -586,8 +634,8 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
         // Point is inside obstacle.
         collision.collides = true;
         collision.inside = (vpc.len() !== radius);
-      } else {
-        // Circle is ahead of or in-line with point.
+      } else if (ray.dot(vpc) >= 0) {
+        // Circle is ahead of point.
         // Projection of center point onto ray.
         var pc = p.add(ray.mul(ray.dot(vpc)));
         // Length from c to its projection on the ray.
@@ -612,6 +660,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     var BUFFER = params.buffer;
     var BALL_DIAMETER = 38;
     var SPIKE_INTERSECTION_RADIUS = params.spike_intersection_radius;
+
     // Ray with current position as basis.
     var position = this._getLocation();
     var ahead = this._getPredictedLocation(this._msToSteps(MAX_SEE_AHEAD));
@@ -642,15 +691,22 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     }
 
     var avoidance = new Point(0, 0);
-
-    if (!inside && Math.sqrt(minDist2) < ahead_distance) {
+    var minDist = Math.sqrt(minDist2);
+    if (!inside && minDist < ahead_distance) {
       avoidance = minCollision.point
         .add(minCollision.normal.mul((this.parameters.game.radius.ball) + BUFFER))
         .sub(position)
         .normalize();
+      //MAX_VELOCITY = 1 - minDist / ahead_distance;
       this.draw.updatePoint("hit", minCollision.point);
     } else {
       this.draw.hidePoint("hit");
+    }
+    if (minCollision) { // DEBUG
+      var currentVelocity = this._getPredictedVelocity(0).mul(100);
+      var diff = minCollision.point.sub(position);
+      var timeToImpact = Math.min(diff.x / currentVelocity.x, diff.y / currentVelocity.y);
+      Logger.log("bot:debug", "Time to impact:", timeToImpact);
     }
     return this._scaleVector(avoidance, MAX_VELOCITY);
   }
@@ -703,7 +759,9 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     isTopSpeed.x = Math.abs(topSpeed - Math.abs(current.x)) < TOP_SPEED_THRESHOLD;
     isTopSpeed.y = Math.abs(topSpeed - Math.abs(current.y)) < TOP_SPEED_THRESHOLD;
     var dirs = {};
-    if (Math.abs(current.x - vec.x) < ACTION_THRESHOLD) {
+    if (Math.abs(current.x - vec.x) < ACTION_THRESHOLD && (Math.abs(vec.x) < Math.abs(current.x))) {
+      // Do nothing.
+    } else if (Math.abs(current.x - vec.x) < ACTION_THRESHOLD) {
       // We're already going fast and we want to keep going fast.
       if (isTopSpeed.x) {
         if (current.x > 0) {
@@ -718,7 +776,9 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
       dirs.right = true;
     }
 
-    if (Math.abs(current.y - vec.y) < ACTION_THRESHOLD && !isTopSpeed.y) {
+    if (Math.abs(current.y - vec.y) < ACTION_THRESHOLD && (Math.abs(vec.y) < Math.abs(current.y))) {
+      // Do nothing.
+    } else if (Math.abs(current.y - vec.y) < ACTION_THRESHOLD) {
       // We're already going fast and we want to keep going fast.
       if (isTopSpeed.y) {
         if (current.y > 0) {
