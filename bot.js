@@ -158,12 +158,12 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     // Don't execute function if bot is stopped.
     if (this.stopped) return;
 
-    var desired_vector = this._potentialFieldSteering();
+    var desired_vector = this._inverseSteering(32);
     this.draw.updateVector("desired", desired_vector.mul(10));
     // Apply desired vector after a short delay.
     setTimeout(function() {
       if (!this.stopped) {
-        this._update(desired_vector);
+        this._update(desired_vector.mul(2));
       }
     }.bind(this), 0);
   }
@@ -211,9 +211,9 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     // Initialize desired vector.
     var desired_vector = new Point(0, 0);
     if (this.goal) {
-      var goal = this.goal.sub(predictedLocation);
-      var goalDist2 = goal.dist2(new Point(0, 0));
-      var attractive_vector = goal.mul(params.attractive_force / goalDist2);
+      var goal = this.goal.sub(predictedLocation).normalize();
+      //var goalDist2 = goal.dist2(new Point(0, 0));
+      var attractive_vector = goal.mul(params.attractive_force);
 
       var repulsive_vector = new Point(0, 0);
       var spikes = this.game.getspikes();
@@ -230,6 +230,177 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
       desired_vector = attractive_vector.add(repulsive_vector).mul(params.force_scale);
     }
     return desired_vector;
+  }
+
+  /**
+   * @param {number} n - The number of vectors to consider.
+   */
+  Bot.prototype._inverseSteering = function(n) {
+    if (typeof n == 'undefined') n = 8;
+    // Generate vectors.
+    var angle = 2 * Math.PI / n;
+    var vectors = [];
+    for (var i = 0; i < n; i++) {
+      vectors.push(new Point(Math.cos(angle * i), Math.sin(angle * i)));
+    }
+
+    // Calculate costs.
+    var costs = [];
+    costs.push(this._inv_Avoid(vectors));
+    costs.push(this._inv_Seek(vectors));
+
+    // Do selection.
+    var heuristic = function(costs) {
+      var w = 1;
+      var summedCosts = [];
+      for (var i = 0; i < costs[0].length; i++) {
+        summedCosts[i] = 0;
+      }
+      summedCosts = costs.reduce(function(summed, cost) {
+        return summed.map(function(sum, i) {
+          return sum + cost[i];
+        });
+      }, summedCosts);
+      var min = summedCosts[0];
+      var idx = 0;
+      for (var i = 1; i < summedCosts.length; i++) {
+        if (summedCosts[i] < min) {
+          min = summedCosts[i];
+          idx = i;
+        }
+      }
+      return idx;
+    }
+
+    var idx = heuristic(costs);
+    return vectors[idx];
+  }
+
+  // Takes in vectors, associates cost with each.
+  // Returns vector of costs.
+  Bot.prototype._inv_Avoid = function(vectors) {
+    var costs = vectors.map(function() {
+      return 0;
+    });
+
+    /**
+     * Holds the properties of a collision, if one occurred.
+     * @typedef Collision
+     * @type {object}
+     * @property {boolean} collides - Whether there is a collision.
+     * @property {boolean} inside - Whether one object is inside the other.
+     * @property {?Point} point - The point of collision, if collision
+     *   occurs, and if `inside` is false.
+     * @property {?Point} normal - A unit vector normal to the point
+     *   of collision, if it occurs and if `inside` is false.
+     */
+    /**
+     * If the ray intersects the circle, the distance to the intersection
+     * along the ray is returned, otherwise false is returned.
+     * @param {Point} p - The start of the ray.
+     * @param {Point} ray - Unit vector extending from `p`.
+     * @param {Point} c - The center of the circle for the object being
+     *   checked for intersection.
+     * @param {number} [radius=55] - The radius of the circle.
+     * @return {Collision} - The collision information.
+     */
+    var lineIntersectsCircle = function(p, ray, c, radius) {
+      // spike radius + ball radius + 1
+      if (typeof radius == 'undefined') radius = 55;
+      var collision = {
+        collides: false,
+        inside: false,
+        point: null,
+        normal: null
+      }
+      var vpc = c.sub(p);
+
+      if (vpc.len() <= radius) {
+        // Point is inside obstacle.
+        collision.collides = true;
+        collision.inside = (vpc.len() !== radius);
+      } else if (ray.dot(vpc) >= 0) {
+        // Circle is ahead of point.
+        // Projection of center point onto ray.
+        var pc = p.add(ray.mul(ray.dot(vpc)));
+        // Length from c to its projection on the ray.
+        var len_c_pc = c.sub(pc).len();
+
+        if (len_c_pc <= radius) {
+          collision.collides = true;
+
+          // Distance from projected point to intersection.
+          var len_intersection = Math.sqrt(len_c_pc * len_c_pc + radius * radius);
+          collision.point = pc.sub(ray.mul(len_intersection));
+          collision.normal = collision.point.sub(c).normalize();
+        }
+      }
+      return collision;
+    }.bind(this);
+
+    var params = this.parameters.steering["avoid"];
+    // Number of ms to look ahead.
+    var MAX_SEE_AHEAD = params.max_see_ahead;
+    var BUFFER = params.buffer;
+    var BALL_DIAMETER = 38;
+    var SPIKE_INTERSECTION_RADIUS = params.spike_intersection_radius;
+
+    // Ray with current position as basis.
+    var position = this.game.location();
+    var ahead = this.game.pLocation(MAX_SEE_AHEAD);
+    var ahead_distance = ahead.sub(position).len();
+
+    var ray = ahead.sub(position).normalize();
+
+    var spikes = this.game.getspikes();
+
+    vectors.forEach(function(vector, i) {
+      for (var j = 0; j < spikes.length; j++) {
+        var spike = spikes[j];
+        // Skip spikes that are too far away to matter.
+        if (spike.dist(position) - SPIKE_INTERSECTION_RADIUS > ahead_distance) continue;
+        collision = lineIntersectsCircle(position, vector, spike, SPIKE_INTERSECTION_RADIUS);
+        if (collision.collides) {
+          if (collision.inside) {
+            costs[i] = 100;
+          } else {
+            // Calculate cost.
+            costs[i] = 55 / position.dist2(collision.point);
+            /*var tmpDist2 = position.dist2(collision.point);
+            if (tmpDist2 < minDist2) {
+              minCollision = collision;
+              minDist2 = tmpDist2;
+            }*/
+          }
+        }
+      }
+    });
+    return costs;
+  }
+
+  Bot.prototype._inv_Seek = function(vectors) {
+    var costs = vectors.map(function() {
+      return 0;
+    });
+    var params = this.parameters.steering["seek"];
+    var p = this.game.location();
+    if (this.goal) {
+      var goal = this.goal.sub(p).normalize();
+    } else {
+      var goal = false;
+    }
+    vectors.forEach(function(vector, i) {
+      if (goal) {
+        var val = vector.dot(goal);
+        if (val < 0) {
+          costs[i] = 20;
+        } else {
+          costs[i] = 1 / val;
+        }
+        //costs[i] += vector.sub(goal).len();
+      }
+    });
+    return costs;
   }
 
   /**
