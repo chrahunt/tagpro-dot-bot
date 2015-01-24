@@ -11,11 +11,6 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   var Edge = pp.Edge;
   var PolyUtils = pp.PolyUtils;
 
-  var State = {
-    offense: 0,
-    defense: 1
-  };
-
   /**
    * @constructor
    * @alias module:bot
@@ -48,10 +43,6 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
 
     // Self is the TagPro player object.
     this.self = tagpro.players[tagpro.playerId];
-    this.playerId = tagpro.playerId;
-
-    // getAcc function set as an interval loop.
-    this.actions['accInterval'] = setInterval(this.getAcc.bind(this), 10);
     
     // Get game type, either ctf or yf.
     this.game_type = this._getGameType();
@@ -151,6 +142,19 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   Bot.prototype.navigate = function() {
     // Don't execute function if bot is stopped.
     if (this.stopped) return;
+
+    var desired_vector = this._potentialFieldSteering();
+    this.draw.updateVector("desired", desired_vector.mul(10));
+    // Apply desired vector after a short delay.
+    setTimeout(function() {
+      if (!this.stopped) {
+        this._update(desired_vector);
+      }
+    }.bind(this), 0);
+  }
+
+  // Navigate using weighted steering behaviors.
+  Bot.prototype._weightedSteering = function() {
     var weights = {
       avoid: 2,
       seek: 1
@@ -180,14 +184,40 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     }*/
     
     // Calculate desired vector.
-    var desired_vector = this.combinedSteering(steering_behaviors, vectors, weights);
-    this.draw.updateVector("desired", desired_vector.mul(10));
-    // Apply desired vector after a short delay.
-    setTimeout(function() {
-      if (!this.stopped) {
-        this._update(desired_vector);
-      }
-    }.bind(this), 0);
+    return this.combinedSteering(steering_behaviors, vectors, weights);
+  }
+
+  // Navigate using potential fields.
+  Bot.prototype._potentialFieldSteering = function() {
+    // Using potential fields around obstacles.
+    var predictedLocation = this._getPredictedLocation(this._msToSteps(20));
+
+    // Initialize desired vector.
+    var desired_vector = new Point(0, 0);
+    var repulsive_force = this.repulsive_force || 12;
+    var attractive_force = this.attractive_force || 10;
+    var dissipation_amt = this.dissipation || 4;
+    var scale = this.force_scale || 100;
+    if (this.goal) {
+      var goal = this.goal.sub(predictedLocation);
+      var goalDist2 = goal.dist2(new Point(0, 0));
+      var attractive_vector = goal.mul(attractive_force / goalDist2);
+
+      var repulsive_vector = new Point(0, 0);
+      var spikes = this.getspikes();
+      spikes.forEach(function(spike) {
+        var v = spike.sub(predictedLocation);
+        var len = v.len();
+        // Highest power at point of intersection around obstacle.
+        var dissipation = Math.pow(len - 55, dissipation_amt);
+        repulsive_vector = repulsive_vector.add(v.mul(repulsive_force / dissipation));
+      });
+      // Make a repulsive force.
+      repulsive_vector = repulsive_vector.mul(-1);
+      // Add together.
+      desired_vector = attractive_vector.add(repulsive_vector).mul(scale);
+    }
+    return desired_vector;
   }
 
   /**
@@ -364,46 +394,56 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
    */
   Bot.prototype._updatePath = function(path) {
     if (path) {
-      this.path = path;
+      this.path = this._postProcessPath(path);
     }
   }
 
-  /*
-   * Update acceleration of players for better tracking.
+  /**
+   * Post-process a path to move it away from obstacles.
+   * @param {Array.<Point>} path - The path to process.
+   * @return {Array.<Point>} - The processed path.
    */
-  Bot.prototype.getAcc = function() {
-    // 'for in' loop to loop through players.
-    for (var id in tagpro.players) {
-      if (tagpro.players.hasOwnProperty(id)) {
-        
-        // Defining player to make things easy to read.
-        var player = tagpro.players[id];
-        
-        // Don't get keypresses for yourself, it's not needed.
-        if (player !== this.self) {
-          
-          // Define new variables in the players object.
-          if (player.accX === undefined) {player.accX = 0;}
-          if (player.accY === undefined) {player.accY = 0;}
-          
-          // Get half the distance you are away from other players.
-          var difX = Math.abs((self.x+self.lx*60)-(player.x+player.lx*60))/2,
-            difY = Math.abs((self.y+self.ly*60)-(player.y+player.ly*60))/2;
-          
-          // Add half the y distance to right and left keypresses.
-          if (player.right || player.left) {
-            if (player.right) {player.accX = difY;}
-            if (player.left) {player.accX = -difY;}
-          } else {player.accX = 0;}
-          
-          // Add half the x distance to down and up keypresses.
-          if (player.down || player.up) {
-            if (player.down) {player.accY = difX;}
-            if (player.up) {player.accY = -difX;}
-          } else {player.accY = 0;}
+  Bot.prototype._postProcessPath = function(path) {
+    var spikes = this.getspikes();
+    // The additional buffer to give the obstacles.
+    var buffer = this.spike_buffer || 20;
+    // The threshold for determining points which are 'close' to
+    // obstacles.
+    var threshold = this.spike_threshold || 60;
+    var spikesByPoint = new Map();
+    path.forEach(function(point) {
+      var closeSpikes = [];
+      spikes.forEach(function(spike) {
+        if (spike.dist(point) < threshold) {
+          closeSpikes.push(spike);
+        }
+      });
+      if (closeSpikes.length > 0) {
+        spikesByPoint.set(point, closeSpikes);
+      }
+    });
+    for (var i = 0; i < path.length; i++) {
+      var point = path[i];
+      if (spikesByPoint.has(point)) {
+        var obstacles = spikesByPoint.get(point);
+        if (obstacles.length == 1) {
+          // Move away from the single point.
+          var obstacle = obstacles[0];
+          var v = point.sub(obstacle);
+          var len = v.len();
+          var newPoint = obstacle.add(v.mul(1 + buffer / len));
+          path[i] = newPoint;
+        } else if (obstacles.length == 2) {
+          // Move away from both obstacles.
+          var center = obstacles[1].add(obstacles[0].sub(obstacles[1]).mul(0.5));
+          var v = point.sub(center);
+          var len = v.len();
+          var newPoint = center.add(v.mul(1 + (buffer + threshold) / len));
+          path[i] = newPoint;
         }
       }
     }
+    return path;
   }
 
   /**
@@ -506,7 +546,16 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
    */
   Bot.prototype._getPredictedVelocity = function(steps) {
     if (typeof steps == 'undefined') steps = 0;
-    var plx, ply;
+    var clx, cly;
+    if (this.self.body) {
+      var vel = this.self.body.GetLinearVelocity();
+      clx = vel.x;
+      cly = vel.y;
+    } else {
+      clx = this.self.lx;
+      cly = this.self.ly;
+    }
+    
     var change_x = 0, change_y = 0;
     if (this.self.pressing.up) {
       change_y = -1;
@@ -518,9 +567,10 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     } else if (this.self.pressing.right) {
       change_x = 1;
     }
-    plx = this.self.lx + this.self.ac * steps * change_x;
+    var plx, ply;
+    plx = clx + this.self.ac * steps * change_x;
     plx = Math.sign(plx) * Math.min(Math.abs(plx), this.self.ms);
-    ply = this.self.ly + this.self.ac * steps * change_y;
+    ply = cly + this.self.ac * steps * change_y;
     ply = Math.sign(ply) * Math.min(Math.abs(ply), this.self.ms);
 
     return new Point(plx, ply);
