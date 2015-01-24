@@ -1,0 +1,76 @@
+<div id="bot-ui">
+  <button id="bot-options">Show/Hide Options</button>
+  <div id="bot-options-panel">
+    <div class="form-group">
+      <label>Power</label>
+      <button id="bot-start">Start</button>
+      <button id="bot-stop">Stop</button>
+    </div>
+    <div class="form-group">
+      <label>Position</label>
+      <button id="bot-offense">Offense</button>
+      <button id="bot-defense">Defense</button>
+    </div>
+    <div class="form-group">
+      <label>Settings</label>
+      <button id="stage-toggle">Turn off stage</button>
+    </div>
+    <div class="form-group">
+      <label>Steering</label>
+      <button id="bot-steering-force">Force-based</button>
+      <button id="bot-steering-behavior">Behavior-based</button>
+    </div>
+  </div>
+</div>
+
+<style>
+#bot-options-panel {
+  display: none;
+  width: auto;
+  background-color: rgba(120, 120, 120, 0.9);
+  padding: 15px;
+}
+
+#bot-options-panel:last-child {
+  margin-bottom: 0px;
+}
+
+#bot-ui {
+  position: absolute;
+  top: 45px;
+  left: 25px;
+}
+
+.form-group {
+  display: block;
+  margin-bottom: 15px;
+  overflow: auto;
+}
+
+.form-group > label {
+  float: left;
+  margin-right: 20px;
+}
+
+.form-group > button {
+  float: right;
+  margin-left: 10px;
+  padding: 5px;
+}
+</style>
+
+<script>
+$('#bot-stop').click(function(e) {
+  myBot.stop();
+});
+$('#bot-start').click(function(e) {
+  myBot.start();
+});
+$('#stage-toggle').click(function(e) {
+  tagpro.renderer.stage.visible = !tagpro.renderer.stage.visible;
+  $(this).text("Turn " + (tagpro.renderer.stage.visible ? "off" : "on") + " stage");
+});
+$('#bot-options').click(function(e) {
+  $('#bot-options-panel').toggle();
+});
+</script>

@@ -20,31 +20,27 @@ requirejs.config({
  */
 require(['bot', 'browserMover'],
 function( Bot,   Mover) {
+  // Overriding this function to grab the parent caller ("this").
+  Box2D.Dynamics.b2Body.prototype.GetPosition = function() {
+    var player = tagpro.players[this.player.id];
+    
+    player.body = player.body || this; // Assign "this" to "player.body".
+    
+    return this.m_xf.position;         // Original instruction of this function.
+  };
+
   // Start.
   var bot = new Bot();
 
   // Set bot to use browser-specific movement handled by this Mover.
   var browserMover = new Mover();
   bot.setMove(browserMover);
+
+  var baseUrl = "http://localhost:8000/";
   
   // Set up UI.
-  $('body').append('<div id="bot-ui"></div>');
-  $('#bot-ui').append('<button id="bot-stop">Stop</button>');
-  $('#bot-ui').append('<button id="bot-start">Start</button>');
-  $('#bot-ui').append('<button id="stage-off">Turn off stage</button>');
-  $('#bot-ui').css('position', 'absolute');
-  $('#bot-ui').css('top', '45px');
-  $('#bot-ui').css('left', '25px');
-
-  $('#bot-stop').click(function(e) {
-    bot.stop();
-  });
-  $('#bot-start').click(function(e) {
-    bot.start();
-  });
-  $('#stage-off').click(function(e) {
-    tagpro.renderer.stage.visible = !tagpro.renderer.stage.visible;
-    $(this).text("Turn " + (tagpro.renderer.stage.visible ? "off" : "on") + " stage");
+  $.get(baseUrl + "ui.html", function(data) {
+    $('body').append(data);
   });
   window.myBot = bot;
 });
