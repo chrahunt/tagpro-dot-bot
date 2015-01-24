@@ -5,9 +5,9 @@ define(function() {
   /**
    * The Mover is responsible for executing actions within the
    * browser environment and managing keypresses.
-   *
-   * To set an agent as a mover, extend its prototype, like
-   *     $.extend(Agent.prototype, new Mover());
+   * Agents should utilize a personal `move` function that should
+   * be set as the move function of the object created from this
+   * class.
    * @constructor
    * @alias module:mover/browser
    */

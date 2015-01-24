@@ -18,23 +18,14 @@ requirejs.config({
  *
  * @module agent/browser
  */
-require(['bot', 'browserMover'],
-function( Bot,   Mover) {
-  // Overriding this function to grab the parent caller ("this").
-  Box2D.Dynamics.b2Body.prototype.GetPosition = function() {
-    var player = tagpro.players[this.player.id];
-    
-    player.body = player.body || this; // Assign "this" to "player.body".
-    
-    return this.m_xf.position;         // Original instruction of this function.
-  };
+require(['bot', 'browserMover', 'browserGameState'],
+function( Bot,   Mover,          GameState) {
+  // Initialize browser-specific state and action utilities.
+  var state = new GameState(tagpro);
+  var mover = new Mover();
 
   // Start.
-  var bot = new Bot();
-
-  // Set bot to use browser-specific movement handled by this Mover.
-  var browserMover = new Mover();
-  bot.setMove(browserMover);
+  var bot = new Bot(state, mover);
 
   var baseUrl = "http://localhost:8000/";
   

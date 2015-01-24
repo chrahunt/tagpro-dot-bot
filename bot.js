@@ -15,9 +15,13 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
    * @constructor
    * @alias module:bot
    */
-  var Bot = function() {
+  var Bot = function(state, mover) {
     // Holds interval ids.
     this.actions = {};
+
+    // Hold environment-specific movement and game state objects.
+    this.move = mover.move.bind(mover);
+    this.game = state;
 
     this.initialized = false;
     this.mapInitialized = false;
@@ -26,29 +30,22 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     setTimeout(this.processMap.bind(this), 50);
   };
 
-  /**
-   * Sets the bot's move functionality.
-   * @param {object} mover - An object with a `move` method that the bot
-   *   will adopt as its own.
-   */
-  Bot.prototype.setMove = function(mover) {
-    this.move = mover.move.bind(mover);
-  }
-
   // Initialize functionality dependent on tagpro provisioning playerId.
   Bot.prototype.init = function() {
     Logger.log("bot", "Initializing Bot.");
     // Ensure that the tagpro global object has initialized and allocated us an id.
-    if (typeof tagpro !== 'object' || !tagpro.playerId) {return setTimeout(this.init.bind(this), 250);}
+    if (!this.game.initialized()) {return setTimeout(this.init.bind(this), 250);}
 
     // Self is the TagPro player object.
-    this.self = tagpro.players[tagpro.playerId];
+    this.self = this.game.player();
     
     // Get game type, either ctf or yf.
-    this.game_type = this._getGameType();
+    this.game_type = this.game.gameType();
 
     Logger.log("bot", "Bot loaded."); // DEBUG
     
+    this._initializeParameters();
+
     // Set up drawing.
     this.draw = new DrawUtils();
 
@@ -60,9 +57,17 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     this.draw.addPoint("goal", 0x00ff00, "foreground");
     this.draw.addPoint("hit", 0xff0000, "foreground");
 
-    // Configurable parameters for various aspects of operation.
-    this.parameters = {};
+    this.initialized = true;
+  }
 
+  /**
+   * Initialize the parameters for the various variable functions of
+   * the bot.
+   * @private
+   */
+  Bot.prototype._initializeParameters = function() {
+    this.parameters = {};
+    
     // Holds information about the game physics parameters.
     this.parameters.game = {
       step: 1e3 / 60, // Physics step size in ms.
@@ -91,27 +96,37 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
       buffer: 25,
       spike_intersection_radius: this.parameters.game.radius.spike + this.parameters.game.radius.ball
     };
+
     this.parameters.steering["update"] = {
       action_threshold: 0.01,
       top_speed_threshold: 0.1,
       current_vector: 0
     };
 
-    this.initialized = true;
+    this.parameters.steering["field"] = {
+      repulsive_force: 1,
+      dissipation: 4,
+      attractive_force: 10,
+      force_scale: 100
+    }
   }
 
-  // Process map-related things.
+  /**
+   * Process map and generate navigation mesh.
+   */
   Bot.prototype.processMap = function() {
-    // Ensure that the tagpro global object has initialized and allocated us an id.
-    if (typeof tagpro !== 'object' || !tagpro.map) {return setTimeout(this.processMap.bind(this), 250);}
-    this.mapTiles = tagpro.map;
-    var parsedMap = mapParser.parse(this.mapTiles);
-    
-    this.navmesh = new NavMesh(parsedMap);
-    this.mapInitialized = true;
+    var map = this.game.map();
+    if (!map) {
+      setTimeout(this.processMap.bind(this), 250);
+    } else {
+      var parsedMap = mapParser.parse(map);
+      
+      this.navmesh = new NavMesh(parsedMap);
+      this.mapInitialized = true;
 
-    this.draw.updateBackground("mesh", this.navmesh.polys);
-    Logger.log("bot", "Navmesh constructed.");
+      this.draw.updateBackground("mesh", this.navmesh.polys);
+      Logger.log("bot", "Navmesh constructed.");
+    }
   }
 
   // Stops the bot. Sets the stop action which all methods need to check for, and also
@@ -160,7 +175,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
       seek: 1
     };
 
-    var me = this._getLocation();
+    var me = this.game.location();
     
     var steering_behaviors = [
       "avoid",
@@ -190,32 +205,29 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   // Navigate using potential fields.
   Bot.prototype._potentialFieldSteering = function() {
     // Using potential fields around obstacles.
-    var predictedLocation = this._getPredictedLocation(this._msToSteps(20));
+    var predictedLocation = this.game.pLocation(20);
+    var params = this.parameters.steering.field;
 
     // Initialize desired vector.
     var desired_vector = new Point(0, 0);
-    var repulsive_force = this.repulsive_force || 12;
-    var attractive_force = this.attractive_force || 10;
-    var dissipation_amt = this.dissipation || 4;
-    var scale = this.force_scale || 100;
     if (this.goal) {
       var goal = this.goal.sub(predictedLocation);
       var goalDist2 = goal.dist2(new Point(0, 0));
-      var attractive_vector = goal.mul(attractive_force / goalDist2);
+      var attractive_vector = goal.mul(params.attractive_force / goalDist2);
 
       var repulsive_vector = new Point(0, 0);
-      var spikes = this.getspikes();
+      var spikes = this.game.getspikes();
       spikes.forEach(function(spike) {
         var v = spike.sub(predictedLocation);
         var len = v.len();
         // Highest power at point of intersection around obstacle.
-        var dissipation = Math.pow(len - 55, dissipation_amt);
-        repulsive_vector = repulsive_vector.add(v.mul(repulsive_force / dissipation));
+        var dissipation = Math.pow(len - 55, params.dissipation);
+        repulsive_vector = repulsive_vector.add(v.mul(params.repulsive_force / dissipation));
       });
       // Make a repulsive force.
       repulsive_vector = repulsive_vector.mul(-1);
       // Add together.
-      desired_vector = attractive_vector.add(repulsive_vector).mul(scale);
+      desired_vector = attractive_vector.add(repulsive_vector).mul(params.force_scale);
     }
     return desired_vector;
   }
@@ -283,12 +295,12 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     }
 
     // Normal capture-the-flag game.
-    if (this.game_type == "ctf") {
-      var start = this._getLocation();
+    if (this.game_type == this.game.GameTypes.ctf) {
+      var start = this.game.location();
 
       // Get possible destinations.
-      var enemyFlagPoint = this.findEnemyFlag();
-      var ownFlagPoint = this.findOwnFlag();
+      var enemyFlagPoint = this.game.findEnemyFlag();
+      var ownFlagPoint = this.game.findOwnFlag();
 
       var destination;
       // Check if I have flag.
@@ -306,20 +318,9 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
         //this._setInterval('path', this._pathUpdate, 500);
         this._setInterval('goal', this._goalUpdate, 20);
       }.bind(this));
-    } else { // Yellow center flag game.
+    } else {
+      // Yellow center flag game.
       this.chat_all("I don't know how to play this type of game!");
-      var iHaveFlag = this.self.flag;
-      if (!iHaveFlag) {
-        var yellow_flag = this.findYellowFlag();
-        if (yellow_flag.state) {
-          var destination = yellow_flag.location;
-          finish_fn = function(bot) {
-            return !bot.self.flag;
-          }
-        }
-      } else {
-
-      }
     }
   }
 
@@ -330,7 +331,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
    */
   Bot.prototype._goalUpdate = function() {
     var goal = false;
-    var me = this._getLocation();
+    var me = this.game.location();
     if (!this.path)
       return;
 
@@ -382,7 +383,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     if (!this.path)
       return;
 
-    var start = this._getLocation();
+    var start = this.game.location();
     var end = this.path[this.path.length - 1];
     this.navmesh.calculatePath(start, end, this._updatePath.bind(this));
   }
@@ -404,7 +405,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
    * @return {Array.<Point>} - The processed path.
    */
   Bot.prototype._postProcessPath = function(path) {
-    var spikes = this.getspikes();
+    var spikes = this.game.getspikes();
     // The additional buffer to give the obstacles.
     var buffer = this.spike_buffer || 20;
     // The threshold for determining points which are 'close' to
@@ -490,93 +491,6 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   }
 
   /**
-   * Get predicted location based on current position and velocity.
-   * @param {number} [steps=60] - How many steps into the future the
-   *   prediction will be.
-   * @returns {Point} - The predicted x, y coordinates.
-   */
-  Bot.prototype._getPredictedLocation = function(steps) {
-    if (typeof steps == 'undefined') steps = 60;
-    var time = (1 / 60) * steps;
-    var cv = this._getPredictedVelocity(0);
-    // Bound the predicted velocity 
-    var pv = this._getPredictedVelocity(1);
-    var current_location = this._getLocation();
-    var dx = 0;
-    var dy = 0;
-
-    if (Math.abs(pv.x) == this.self.ms) {
-      // Find point that max velocity was reached.
-      var step = Math.abs(pv.x - cv.x) / this.self.ac;
-      var accTime = step * (1 / 60);
-      dx += accTime * ((pv.x + cv.x) / 2);
-      dx += (time - accTime) * pv.x;
-    } else {
-      dx += time * ((pv.x + cv.x) / 2);
-    }
-
-    if (Math.abs(pv.y) == this.self.ms) {
-      var step = Math.abs(pv.y - cv.y) / this.self.ac;
-      var accTime = step * (1 / 60);
-      dy += accTime * ((pv.y + cv.y) / 2);
-      dy += (time - accTime) * pv.y;
-    } else {
-      dy += time * ((pv.y + cv.y) / 2);
-    }
-    var dl = new Point(dx, dy);
-    // Convert from physics units to x, y coordinates.
-    dl = dl.mul(100);
-
-    return current_location.add(dl);
-  }
-
-  // Get current location as a point.
-  Bot.prototype._getLocation = function() {
-    return new Point(this.self.x + 20, this.self.y + 20);
-  }
-
-  /**
-   * Get predicted velocity a number of steps into the future based on
-   * current velocity, acceleration, max velocity, and the keys being
-   * pressed.
-   * @param {number} [steps=0] - How many steps in the future to predict
-   *   the velocity for. A value of 0 returns the current velocity bounded
-   *   by the maximum velocity.
-   * @returns {Point} - The predicted velocity.
-   */
-  Bot.prototype._getPredictedVelocity = function(steps) {
-    if (typeof steps == 'undefined') steps = 0;
-    var clx, cly;
-    if (this.self.body) {
-      var vel = this.self.body.GetLinearVelocity();
-      clx = vel.x;
-      cly = vel.y;
-    } else {
-      clx = this.self.lx;
-      cly = this.self.ly;
-    }
-    
-    var change_x = 0, change_y = 0;
-    if (this.self.pressing.up) {
-      change_y = -1;
-    } else if (this.self.pressing.down) {
-      change_y = 1;
-    }
-    if (this.self.pressing.left) {
-      change_x = -1;
-    } else if (this.self.pressing.right) {
-      change_x = 1;
-    }
-    var plx, ply;
-    plx = clx + this.self.ac * steps * change_x;
-    plx = Math.sign(plx) * Math.min(Math.abs(plx), this.self.ms);
-    ply = cly + this.self.ac * steps * change_y;
-    ply = Math.sign(ply) * Math.min(Math.abs(ply), this.self.ms);
-
-    return new Point(plx, ply);
-  }
-
-  /**
    * Scale a vector so that one of the components is maximized.
    * @param {Point} vec - The vector to scale.
    * @param {number} max - The maximum (absolute) value of either component.
@@ -594,16 +508,6 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   }
 
   /**
-   * Given a time in ms, return the number of steps needed to represent
-   * that time.
-   * @param {integer} ms - The number of ms.
-   * @return {integer} - The number of steps.
-   */
-  Bot.prototype._msToSteps = function(ms) {
-    return ms / this.parameters.game.step;
-  }
-
-  /**
    * Given a target, returns a vector representing the desired velocity
    * for approaching that target. Assumes a clear path to target exists.
    * @param {Point}  target - The target location to approach.
@@ -616,7 +520,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     var MAX_VELOCITY = this.self.ms;
 
     // Get the predicted position.
-    var prediction = this._getPredictedLocation(this._msToSteps(MAX_SEE_AHEAD));
+    var prediction = this.game.pLocation(MAX_SEE_AHEAD);
 
     var steering = new Point(0, 0);
     var desired_velocity = target.sub(prediction).normalize();
@@ -628,7 +532,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   Bot.prototype._navpath = function(goal, next) {
     var WEIGHT = 10;
     var desired = new Point(0, 0);
-    var current = this._getLocation();
+    var current = this.game.location();
     var offsets = [
       new Point(5, 0), // right
       new Point(0, 5), // down
@@ -712,15 +616,15 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     var SPIKE_INTERSECTION_RADIUS = params.spike_intersection_radius;
 
     // Ray with current position as basis.
-    var position = this._getLocation();
-    var ahead = this._getPredictedLocation(this._msToSteps(MAX_SEE_AHEAD));
+    var position = this.game.location();
+    var ahead = this.game.pLocation(MAX_SEE_AHEAD);
     var ahead_distance = ahead.sub(position).len();
 
     var ray = ahead.sub(position).normalize();
 
     var inside = false;
     var minDist2 = Infinity;
-    var spikes = this.getspikes();
+    var spikes = this.game.getspikes();
     var spike, collision, minCollision, dist;
     for (var i = 0; i < spikes.length; i++) {
       spike = spikes[i];
@@ -753,40 +657,12 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
       this.draw.hidePoint("hit");
     }
     if (minCollision) { // DEBUG
-      var currentVelocity = this._getPredictedVelocity(0).mul(100);
+      var currentVelocity = this.velocity().mul(100);
       var diff = minCollision.point.sub(position);
       var timeToImpact = Math.min(diff.x / currentVelocity.x, diff.y / currentVelocity.y);
       Logger.log("bot:debug", "Time to impact:", timeToImpact);
     }
     return this._scaleVector(avoidance, MAX_VELOCITY);
-  }
-
-  /**
-   * Returns an array of Points that specifies the coordinates of any
-   * spikes on the map.
-   * @return {Array.<Point>} - An array of Point objects representing the
-   *   coordinates of the center of each spike.
-   */
-  Bot.prototype.getspikes = function() {
-    if (this.hasOwnProperty('spikes')) {
-      return this.spikes;
-    } else {
-      var results = this._findTiles(Tiles.spike);
-      var spikes = results.map(function(result) {
-        return result.location;
-      });
-      this.spikes = spikes;
-      // Debugging, draw circle used for determining spike intersection.
-      this.spikes.forEach(function(spike, i) {
-        this.draw.addCircle(
-          "spike-" + i,
-          this.parameters.steering.avoid.spike_intersection_radius,
-          0xbbbb00
-        );
-        this.draw.updateCircle("spike-" + i, spike);
-      }, this);
-      return spikes;
-    }
   }
 
   /**
@@ -802,7 +678,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     var ACTION_THRESHOLD = params.action_threshold;
     var CURRENT_VECTOR = params.current_vector;
     var TOP_SPEED_THRESHOLD = params.top_speed_threshold;
-    var current = this._getPredictedVelocity(CURRENT_VECTOR);
+    var current = this.game.pVelocity(CURRENT_VECTOR);
     var topSpeed = this.self.ms;
     var isTopSpeed = {};
     // actual speed can vary +- 0.02 of top speed/
@@ -850,126 +726,6 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
    */
   Bot.prototype.allUp = function() {
     this.move({});
-  }
-
-  /**
-   * Translate an array location from `tagpro.map` into a point
-   * representing the x, y coordinates of the top left of the tile,
-   * or the center of the tile if 'center' is true.
-   * @param {integer} row - The row of the tile.
-   * @param {integer} col - The column of the tile.
-   * @return {Point} - The x, y coordinates of the tile.
-   */
-  Bot.prototype._arrayToCoord = function(row, col) {
-    return new Point(40 * row, 40 * col);
-  }
-
-  // Get enemy flag coordinates. An object is returned with properties 'point' and 'present'.
-  // if flag is present at point then it will be set to true. If no flag is found, then
-  // null is returned.
-  Bot.prototype.findEnemyFlag = function() {
-    // Get flag value.
-    var tile = (this.self.team == Teams.blue ? Tiles.redflag : Tiles.blueflag);
-    return this._findTile(tile);
-  }
-
-  // Get own flag coordinates. See #findEnemyFlag for details.
-  Bot.prototype.findOwnFlag = function() {
-    var tile = (this.self.team == Teams.blue ? Tiles.blueflag : Tiles.redflag);
-    return this._findTile(tile);
-  }
-
-  /**
-   * Find yellow flag.
-   */
-  Bot.prototype.findYellowFlag = function() {
-    return this._findTile(Tiles.yellowflag);
-  }
-
-  /**
-   * Represents a tile along with its possible values and the value for the 'state' attribute
-   * of the tile result that should be returned from a search.
-   * @typedef Tile
-   * @type {object.<(number|string), *>}
-   */
-  var Tiles = {
-    yellowflag: {16: true, "16.1": false},
-    redflag: {3: true, "3.1": false},
-    blueflag: {4: true, "4.1": false},
-    powerup: {6: false, "6.1": "grip", "6.2": "bomb", "6.3": "tagpro", "6.4": "speed"},
-    bomb: {10: true, "10.1": false},
-    spike: {7: true}
-  };
-
-  var Teams = {
-    red: 1,
-    blue: 2
-  };
-
-  /**
-   * Result of tile search function, contains a location and state.
-   * @typedef TileSearchResult
-   * @type {object}
-   * @property {Point} location - The x, y location of the found tile.
-   * @property {*} state - A field defined by the given tile object and
-   *   the actual value that was matched.
-   */
-
-  /**
-   * Search the map for a tile matching the given tile description, and
-   * return the first one found, or `null` if no such tile is found. The
-   * location in the returned tile results points to the center of the
-   * tile.
-   * @param {Tile} tile - A tile to search for.
-   * @return {?TileSearchResult} - The result of the tile search, or
-   *   null if no tile was found.
-   */
-  Bot.prototype._findTile = function(tile) {
-    // Get keys and convert to numbers
-    var vals = Object.keys(tile).map(function(val) {return +val;});
-    for (var row in tagpro.map) {
-      for (var col in tagpro.map[row]) {
-        if (vals.indexOf(+tagpro.map[row][col]) !== -1) {
-          var loc = this._arrayToCoord(+row, +col).add(20);
-          var state = tile[tagpro.map[row][col]];
-          return {location: loc, state: state};
-        }
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Find all tiles in map that match the given tile, and return their
-   * information.
-   * @param {Tile} tile - A tile type to search for the locations of in
-   *   the map.
-   * @return {Array.<TileSearchResult>} - The results of the search, or
-   *   an empty array if no tiles were found.
-   */
-  Bot.prototype._findTiles = function(tile) {
-    var tiles_found = [];
-    var vals = Object.keys(tile).map(function(val) {return +val;});
-    for (var row in tagpro.map) {
-      for (var col in tagpro.map[row]) {
-        if (vals.indexOf(+tagpro.map[row][col]) !== -1) {
-          var loc = this._arrayToCoord(+row, +col).add(20);
-          var state = tile[tagpro.map[row][col]];
-          tiles_found.push({location: loc, state: state});
-        }
-      }
-    }
-    return tiles_found;
-  }
-
-  // Identify the game time, whether capture the flag or yellow flag.
-  // Returns either "ctf" or "yf".
-  Bot.prototype._getGameType = function() {
-    if (this.findOwnFlag() && this.findEnemyFlag()) {
-      return "ctf";
-    } else {
-      return "yf";
-    }
   }
 
   Bot.prototype.chat_all = function(chatMessage) {
