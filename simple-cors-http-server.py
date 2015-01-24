@@ -1,7 +1,7 @@
 #! /usr/bin/env python2
 # From http://stackoverflow.com/a/21957017/1698058
-from SimpleHTTPServer import SimpleHTTPRequestHandler
-import BaseHTTPServer
+from http.server import SimpleHTTPRequestHandler, HTTPServer
+import http.server
 
 class CORSRequestHandler (SimpleHTTPRequestHandler):
     def end_headers (self):
@@ -9,4 +9,4 @@ class CORSRequestHandler (SimpleHTTPRequestHandler):
         SimpleHTTPRequestHandler.end_headers(self)
 
 if __name__ == '__main__':
-    BaseHTTPServer.test(CORSRequestHandler, BaseHTTPServer.HTTPServer)
+    http.server.test(CORSRequestHandler, HTTPServer)
