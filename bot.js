@@ -283,89 +283,43 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
       return 0;
     });
 
-    /**
-     * Holds the properties of a collision, if one occurred.
-     * @typedef Collision
-     * @type {object}
-     * @property {boolean} collides - Whether there is a collision.
-     * @property {boolean} inside - Whether one object is inside the other.
-     * @property {?Point} point - The point of collision, if collision
-     *   occurs, and if `inside` is false.
-     * @property {?Point} normal - A unit vector normal to the point
-     *   of collision, if it occurs and if `inside` is false.
-     */
-    /**
-     * If the ray intersects the circle, the distance to the intersection
-     * along the ray is returned, otherwise false is returned.
-     * @param {Point} p - The start of the ray.
-     * @param {Point} ray - Unit vector extending from `p`.
-     * @param {Point} c - The center of the circle for the object being
-     *   checked for intersection.
-     * @param {number} [radius=55] - The radius of the circle.
-     * @return {Collision} - The collision information.
-     */
-    var lineIntersectsCircle = function(p, ray, c, radius) {
-      // spike radius + ball radius + 1
-      if (typeof radius == 'undefined') radius = 55;
-      var collision = {
-        collides: false,
-        inside: false,
-        point: null,
-        normal: null
-      }
-      var vpc = c.sub(p);
-
-      if (vpc.len() <= radius) {
-        // Point is inside obstacle.
-        collision.collides = true;
-        collision.inside = (vpc.len() !== radius);
-      } else if (ray.dot(vpc) >= 0) {
-        // Circle is ahead of point.
-        // Projection of center point onto ray.
-        var pc = p.add(ray.mul(ray.dot(vpc)));
-        // Length from c to its projection on the ray.
-        var len_c_pc = c.sub(pc).len();
-
-        if (len_c_pc <= radius) {
-          collision.collides = true;
-
-          // Distance from projected point to intersection.
-          var len_intersection = Math.sqrt(len_c_pc * len_c_pc + radius * radius);
-          collision.point = pc.sub(ray.mul(len_intersection));
-          collision.normal = collision.point.sub(c).normalize();
-        }
-      }
-      return collision;
-    }.bind(this);
-
-    var params = this.parameters.steering["avoid"];
-    // Number of ms to look ahead.
-    var MAX_SEE_AHEAD = params.max_see_ahead;
-    var BUFFER = params.buffer;
     var BALL_DIAMETER = 38;
-    var SPIKE_INTERSECTION_RADIUS = params.spike_intersection_radius;
+    // For determining intersection and cost of distance.
+    var SPIKE_INTERSECTION_RADIUS = 55;
+    // For determining how many ms to look ahead for the location to use
+    // as the basis for seeing the impact a direction will have.
+    var LOOK_AHEAD = 40;
+
+    // For determining how much difference heading towards a single direction
+    // will make.
+    var DIR_LOOK_AHEAD = 40;
 
     // Ray with current position as basis.
     var position = this.game.location();
-    var ahead = this.game.pLocation(MAX_SEE_AHEAD);
+    // look ahead 20ms
+    var ahead = this.game.pLocation(LOOK_AHEAD);
     var ahead_distance = ahead.sub(position).len();
 
-    var ray = ahead.sub(position).normalize();
+    var relative_location = ahead.sub(position);
 
     var spikes = this.game.getspikes();
 
     vectors.forEach(function(vector, i) {
+      vector = relative_location.add(vector.mul(DIR_LOOK_AHEAD));
+      var veclen = vector.len();
+      // Put vector relative to predicted position.
+      vector = vector.normalize();
       for (var j = 0; j < spikes.length; j++) {
         var spike = spikes[j];
         // Skip spikes that are too far away to matter.
-        if (spike.dist(position) - SPIKE_INTERSECTION_RADIUS > ahead_distance) continue;
-        collision = lineIntersectsCircle(position, vector, spike, SPIKE_INTERSECTION_RADIUS);
+        if (spike.dist(position) - SPIKE_INTERSECTION_RADIUS > veclen) continue;
+        collision = PolyUtils.lineCircleIntersection(position, vector, spike, SPIKE_INTERSECTION_RADIUS);
         if (collision.collides) {
           if (collision.inside) {
-            costs[i] = 100;
+            costs[i] += 100;
           } else {
             // Calculate cost.
-            costs[i] = 55 / position.dist2(collision.point);
+            costs[i] += SPIKE_INTERSECTION_RADIUS / position.dist(collision.point);
             /*var tmpDist2 = position.dist2(collision.point);
             if (tmpDist2 < minDist2) {
               minCollision = collision;
@@ -523,6 +477,12 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
             cut = true;
           }
         } else {
+          if (me.dist(goal) < 20) {
+            if (i !== 0) {
+              last_index = i;
+              cut
+            }
+          }
           break;
         }
       }
@@ -723,61 +683,6 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
 
   // Returns a desired direction vector for avoiding spikes.
   Bot.prototype._avoid = function() {
-    /**
-     * Holds the properties of a collision, if one occurred.
-     * @typedef Collision
-     * @type {object}
-     * @property {boolean} collides - Whether there is a collision.
-     * @property {boolean} inside - Whether one object is inside the other.
-     * @property {?Point} point - The point of collision, if collision
-     *   occurs, and if `inside` is false.
-     * @property {?Point} normal - A unit vector normal to the point
-     *   of collision, if it occurs and if `inside` is false.
-     */
-    /**
-     * If the ray intersects the circle, the distance to the intersection
-     * along the ray is returned, otherwise false is returned.
-     * @param {Point} p - The start of the ray.
-     * @param {Point} ray - Unit vector extending from `p`.
-     * @param {Point} c - The center of the circle for the object being
-     *   checked for intersection.
-     * @param {number} [radius=55] - The radius of the circle.
-     * @return {Collision} - The collision information.
-     */
-    var lineIntersectsCircle = function(p, ray, c, radius) {
-      // spike radius + ball radius + 1
-      if (typeof radius == 'undefined') radius = 55;
-      var collision = {
-        collides: false,
-        inside: false,
-        point: null,
-        normal: null
-      }
-      var vpc = c.sub(p);
-
-      if (vpc.len() <= radius) {
-        // Point is inside obstacle.
-        collision.collides = true;
-        collision.inside = (vpc.len() !== radius);
-      } else if (ray.dot(vpc) >= 0) {
-        // Circle is ahead of point.
-        // Projection of center point onto ray.
-        var pc = p.add(ray.mul(ray.dot(vpc)));
-        // Length from c to its projection on the ray.
-        var len_c_pc = c.sub(pc).len();
-
-        if (len_c_pc <= radius) {
-          collision.collides = true;
-
-          // Distance from projected point to intersection.
-          var len_intersection = Math.sqrt(len_c_pc * len_c_pc + radius * radius);
-          collision.point = pc.sub(ray.mul(len_intersection));
-          collision.normal = collision.point.sub(c).normalize();
-        }
-      }
-      return collision;
-    }.bind(this);
-
     var params = this.parameters.steering["avoid"];
     // Number of ms to look ahead.
     var MAX_SEE_AHEAD = params.max_see_ahead;
@@ -800,7 +705,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     for (var i = 0; i < spikes.length; i++) {
       spike = spikes[i];
       if (spike.dist(position) - SPIKE_INTERSECTION_RADIUS > ahead_distance) continue;
-      collision = lineIntersectsCircle(position, ray, spike, SPIKE_INTERSECTION_RADIUS);
+      collision = PolyUtils.lineCircleIntersection(position, ray, spike, SPIKE_INTERSECTION_RADIUS);
       if (collision.collides) {
         if (collision.inside) {
           inside = true;
