@@ -3,8 +3,8 @@
  * of map-related modules) and low-level steering/locomotion.
  * @module bot
  */
-define(['map/parse-map', 'map/navmesh', 'map/polypartition', 'drawutils', 'bragi'],
-function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logger) {
+define(['map/parse-map', 'map/navmesh', 'map/polypartition', 'drawutils', 'bragi', 'goals'],
+function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logger,  Brain) {
   // Alias useful classes.
   var Point = pp.Point;
   var Poly = pp.Poly;
@@ -26,6 +26,8 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     this.initialized = false;
     this.mapInitialized = false;
     this.init();
+
+    this.brain = new Brain(this);
 
     setTimeout(this.processMap.bind(this), 50);
   };
@@ -59,6 +61,27 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
 
     this.initialized = true;
   }
+
+  Bot.prototype.update = function() {
+    this.brain.process();
+    this._move();
+  };
+
+  // Do movements.
+  Bot.prototype._move = function() {
+    if (this.goal) {
+      this.navigate();
+    }
+  };
+
+  /**
+   * Sets the given point as the target for the bot to be navigated
+   * to.
+   * @param {Point} point - The point to navigate to.
+   */
+  Bot.prototype.setTarget = function(point) {
+    this.goal = point;
+  };
 
   /**
    * Initialize the parameters for the various variable functions of
@@ -138,6 +161,9 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     this._clearInterval("navigate");
     this._clearInterval("path");
     this._clearInterval("goal");
+    this._clearInterval("think");
+    this._clearInterval("update");
+    this.brain.terminate();
     this.allUp();
     this._removeDraw();
   }
@@ -146,7 +172,10 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   Bot.prototype.start = function() {
     Logger.log("bot", "Starting bot.");
     this.stopped = false;
-    this._setInterval("game", this._gameUpdate, 1000);
+    //this._setInterval("game", this._gameUpdate, 1000);
+    this.brain.think();
+    this._setInterval("think", this.brain.think.bind(this.brain), 500);
+    this._setInterval("update", this.update, 20);
     this.draw.showVector("seek");
     this.draw.showVector("avoid");
   }
