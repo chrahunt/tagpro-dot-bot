@@ -24,11 +24,28 @@ define(function() {
 
   Goal.prototype.terminate = function() {};
 
-  Goal.prototype.handleMessage = function(msg) {};
+  /**
+   * This function allows passing a message to a goal to be handled in
+   * real-time. If this is not overriden then the default behavior is
+   * to not handle the message.
+   * @param {} msg - The message.
+   * @return {boolean} - Whether or not the goal handled the message.
+   */
+  Goal.prototype.handleMessage = function(msg) {
+    return false;
+  };
 
+  /**
+   * Run the activate function for the current goal if its current
+   * status is inactive, otherwise do nothing.
+   * @return {boolean} - Whether or not the activate function was run.
+   */
   Goal.prototype.activateIfInactive = function() {
     if (this.isInactive()) {
       this.activate();
+      return true;
+    } else {
+      return false;
     }
   };
 
@@ -65,7 +82,36 @@ define(function() {
 
   inherits(CompositeGoal, Goal);
 
-  CompositeGoal.prototype.processSubgoals = function(first_argument) {
+  /**
+   * By default, a composite goal forwards messages to the first
+   * subgoal and returns the result.
+   * @param {} msg - The message to handle.
+   * @return {boolean} - Whether or not the message was handled.
+   */
+  CompositeGoal.prototype.handleMessage = function(msg) {
+    return this.forwardToFirstSubgoal(msg);
+  };
+
+  /**
+   * Forward the given message to the first subgoal of this goal, or if
+   * there are no subgoals, return false.
+   * @param {} msg - The message to forward.
+   * @param {boolean} - Whether or not the nessage was handled.
+   */
+  CompositeGoal.prototype.forwardToFirstSubgoal = function(msg) {
+    if (this.subgoals.length > 0) {
+      return this.subgoals[0].handleMessage(msg);
+    } else {
+      return false;
+    }
+  };
+
+  /**
+   * Process the subgoals of a composite goal. This removes completed
+   * and failed goals from the subgoal list and processes the first
+   * subgoal still remaining.
+   */
+  CompositeGoal.prototype.processSubgoals = function() {
     // Remove completed and failed subgoals.
     while (this.subgoals.length !== 0 &&
       (this.subgoals[0].isCompleted() || this.subgoals[0].hasFailed())) {
@@ -121,15 +167,21 @@ define(function() {
     this.removeAllSubgoals();
   };
 
+  /**
+   * This goal is concerned with making decisions and guiding the
+   * behavior of the bot.
+   */
   var Think = function(bot) {
     CompositeGoal.apply(this, arguments);
+    // Game type, either ctf or cf
+    this.gameType = this.bot.game.gameType();
   };
 
   inherits(Think, CompositeGoal);
 
   Think.prototype.activate = function() {
-    this.think();
     this.status = GoalStatus.active;
+    this.think();
   };
 
   Think.prototype.process = function() {
@@ -142,35 +194,62 @@ define(function() {
   };
 
   /**
-   * Choose action to take.
+   * Think handles death messages directly, and passes all others to
+   * its subgoals.
    */
-  Think.prototype.think = function() {
-    // Make sure we're not already on offense.
-    if (!this.isFirstSubgoal(Offense)) {
-      // Only set to offense for now.
-      // This goal replaces all others.
-      this.removeAllSubgoals();
-      this.addSubgoal(new Offense(this.bot));
+  Think.prototype.handleMessage = function(msg) {
+    if (msg == "dead") {
+      this.terminate();
+      this.status = GoalStatus.inactive;
+      return true;
+    } else {
+      return this.forwardToFirstSubgoal(msg);
     }
   };
 
+  /**
+   * Choose action to take.
+   */
+  Think.prototype.think = function() {
+    if (this.gameType == this.bot.game.GameTypes.ctf) {
+      // Make sure we're not already on offense.
+      if (!this.isFirstSubgoal(Offense)) {
+        // Only set to offense for now.
+        // This goal replaces all others.
+        this.removeAllSubgoals();
+        this.addSubgoal(new Offense(this.bot));
+      }
+    } else {
+      // Center flag game.
+    }
+  };
+
+  /**
+   * Offense is a goal with the purpose of capturing the enemy flag and
+   * returning it to base to obtain a capture.
+   * @constructor
+   * @param {Bot} bot - The bot.
+   */
   var Offense = function(bot) {
     CompositeGoal.apply(this, arguments);
-    // NavigateToEnemyBase
-    // GrabFlag
-    // ReturnToHomeBase
-    // Cap
   };
 
   inherits(Offense, CompositeGoal);
 
+  /**
+   * The Offense goal activation function checks whether or not the bot
+   * has the flag and initiates navigation to either retrieve it or
+   * return to base to get a capture.
+   */
   Offense.prototype.activate = function() {
     this.status = GoalStatus.active;
     var destination;
     if (!this.bot.self.flag) {
-      this.addSubgoal(new NavigateToEnemyBase(this.bot));
+      destination = this.bot.game.findEnemyFlag();
+      this.addSubgoal(new NavigateToPoint(this.bot, destination));
     } else {
-      this.addSubgoal(new NavigateToHomeBase(this.bot));
+      destination = this.bot.game.findOwnFlag();
+      this.addSubgoal(new NavigateToPoint(this.bot, destination));
     }
   };
 
@@ -185,73 +264,126 @@ define(function() {
     return this.status;
   };
 
-  var NavigateToEnemyBase = function(bot) {
+  /**
+   * This goal navigates to the given point, where the point may be
+   * a static location anywhere in the traversable area of the game
+   * map.
+   * @param {Bot} bot - The bot.
+   * @param {Point} point - The point to navigate to.
+   */
+  var NavigateToPoint = function(bot, point) {
     CompositeGoal.apply(this, arguments);
-  };
-
-  inherits(NavigateToEnemyBase, CompositeGoal);
-
-  NavigateToEnemyBase.prototype.activate = function() {
-    this.status = GoalStatus.active;
-    var start = this.bot.game.location();
-    var destination = this.bot.game.findEnemyFlag();
-    this.status = GoalStatus.waiting;
-    // Calculate path.
-    this.bot.navmesh.calculatePath(start, destination.location, function(path) {
-      // Navigate path.
-      this.addSubgoal(new FollowPath(this.bot, path));
-      this.status = GoalStatus.active;
-    }.bind(this));
-  };
-
-  NavigateToEnemyBase.prototype.process = function() {
-    this.activateIfInactive();
-    
-    if (this.status !== GoalStatus.waiting) {
-      this.status = this.processSubgoals();
-    }
-
-    return this.status;
-  };
-
-  var NavigateToHomeBase = function(bot) {
-    CompositeGoal.apply(this, arguments);
+    this.point = point;
   }
 
-  inherits(NavigateToHomeBase, CompositeGoal);
+  inherits(NavigateToPoint, CompositeGoal);
 
-  NavigateToHomeBase.prototype.activate = function() {
+  NavigateToPoint.prototype.activate = function() {
     this.status = GoalStatus.active;
     var start = this.bot.game.location();
-    // TODO: Transition to goal that takes into account lack of flag in base.
-    var destination = this.bot.game.findOwnFlag();
-    this.status = GoalStatus.waiting;
-    // Calculate path.
-    this.bot.navmesh.calculatePath(start, destination.location, function(path) {
-      this.status = GoalStatus.active;
-      // Navigate path.
+    var end = this.point.location;
+
+    // Add subgoal to calculate the path.
+    this.addSubgoal(new CalculatePath(this.bot, start, end, function(path) {
       this.addSubgoal(new FollowPath(this.bot, path));
-    }.bind(this));
+    }.bind(this)));
   };
 
-  NavigateToHomeBase.prototype.process = function() {
+  NavigateToPoint.prototype.process = function() {
     this.activateIfInactive();
-
-    // Ensure we're not waiting on the path.
-    if (this.status !== GoalStatus.waiting) {
-      this.status = this.processSubgoals();
-    }
+    
+    this.status = this.processSubgoals();
 
     return this.status;
   };
 
-  var CalculatePath = function() {};
+  /**
+   * This goal calculates a path from the start to the end points and
+   * calls the provided callback function after the path is calculated.
+   * @param {Bot} bot - The bot.
+   * @param {Point} start - The start location for the path.
+   * @param {Point} end - The end location for the path.
+   * @param {} callback - The callback function to be invoked when the
+   *   path has been calculated.
+   */
+  var CalculatePath = function(bot, start, end, callback) {
+    Goal.apply(this, arguments);
+    this.start = start;
+    this.end = end;
+    this.callback = callback;
+  };
+
+  inherits(CalculatePath, Goal);
+
+  CalculatePath.prototype.activate = function() {
+    this.status = GoalStatus.waiting;
+    // Calculate path.
+    this.bot.navmesh.calculatePath(this.start, this.end, function(path) {
+      this.status = GoalStatus.completed;
+      path = this._postProcessPath(path);
+      this.callback(path);
+    }.bind(this));
+  };
+
+  CalculatePath.prototype.process = function() {
+    this.activateIfInactive();
+    return this.status;
+  };
+
+  /**
+   * Post-process a path to move it away from obstacles.
+   * @param {Array.<Point>} path - The path to process.
+   * @return {Array.<Point>} - The processed path.
+   */
+  CalculatePath.prototype._postProcessPath = function(path) {
+    var spikes = this.bot.game.getspikes();
+    // The additional buffer to give the obstacles.
+    var buffer = this.bot.spike_buffer || 20;
+    // The threshold for determining points which are 'close' to
+    // obstacles.
+    var threshold = this.bot.spike_threshold || 60;
+    var spikesByPoint = new Map();
+    path.forEach(function(point) {
+      var closeSpikes = [];
+      spikes.forEach(function(spike) {
+        if (spike.dist(point) < threshold) {
+          closeSpikes.push(spike);
+        }
+      });
+      if (closeSpikes.length > 0) {
+        spikesByPoint.set(point, closeSpikes);
+      }
+    });
+    for (var i = 0; i < path.length; i++) {
+      var point = path[i];
+      if (spikesByPoint.has(point)) {
+        var obstacles = spikesByPoint.get(point);
+        if (obstacles.length == 1) {
+          // Move away from the single point.
+          var obstacle = obstacles[0];
+          var v = point.sub(obstacle);
+          var len = v.len();
+          var newPoint = obstacle.add(v.mul(1 + buffer / len));
+          path[i] = newPoint;
+        } else if (obstacles.length == 2) {
+          // Move away from both obstacles.
+          var center = obstacles[1].add(obstacles[0].sub(obstacles[1]).mul(0.5));
+          var v = point.sub(center);
+          var len = v.len();
+          var newPoint = center.add(v.mul(1 + (buffer + threshold) / len));
+          path[i] = newPoint;
+        }
+      }
+    }
+    return path;
+  };
 
   var GrabFlag = function() {};
 
   var DefendFlag = function() {};
 
   /**
+   * This goal 
    * @param {Bot} bot - The bot.
    * @param {Array.<Point>} path - The path to follow.
    */
@@ -269,14 +401,13 @@ define(function() {
 
     // try to navigate to front of path.
     if (destination) {
-      this.addSubgoal(new NavigateToPoint(this.bot, destination));
+      this.addSubgoal(new SeekToPoint(this.bot, destination));
     } else {
       this.status = GoalStatus.failed;
     }
 
     // If front of path is not visible, set failed. - may need to do
     // lower in goal hierarchy.
-
   };
 
   FollowPath.prototype.process = function() {
@@ -350,24 +481,26 @@ define(function() {
   };
 
   /**
-   * Navigate to the given point.
+   * Seek to the given point, which is assumed to be a static point in
+   * the line-of-sight of the bot.
    * @param {Bot} bot
    * @param {Point} point - The point to navigate to.
    */
-  var NavigateToPoint = function(bot, point) {
+  var SeekToPoint = function(bot, point) {
     CompositeGoal.apply(this, arguments);
     this.point = point;
   };
 
-  inherits(NavigateToPoint, Goal);
-  NavigateToPoint.prototype.activate = function() {
+  inherits(SeekToPoint, Goal);
+
+  SeekToPoint.prototype.activate = function() {
     this.status = GoalStatus.active;
 
     // Set bot steering target.
     this.bot.setTarget(this.point);
   };
 
-  NavigateToPoint.prototype.process = function() {
+  SeekToPoint.prototype.process = function() {
     this.activateIfInactive();
 
     // Check for death. - may need to be done higher up.
