@@ -10,6 +10,11 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   var Poly = pp.Poly;
   var PolyUtils = pp.PolyUtils;
 
+  var Stance = {
+    offense: 0,
+    defence: 1
+  };
+
   /**
    * @constructor
    * @alias module:bot
@@ -21,6 +26,8 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     // Hold environment-specific movement and game state objects.
     this.move = mover.move.bind(mover);
     this.game = state;
+
+    this.stance = Stance.offense;
 
     this.initialized = false;
     this.mapInitialized = false;
@@ -69,6 +76,22 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     this._sense();
   };
 
+  Bot.prototype.attack = function() {
+    this.stance = Stance.offense;
+  };
+
+  Bot.prototype.defend = function() {
+    this.stance = Stance.defence;
+  };
+
+  Bot.prototype.isOffense = function() {
+    return this.stance == Stance.offense;
+  };
+
+  Bot.prototype.isDefence = function() {
+    return this.stance == Stance.defence;
+  };
+
   /**
    * Sense environment changes and send messages to brain if needed.
    */
@@ -76,6 +99,10 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     if (this.self.dead) {
       this.brain.handleMessage("dead");
     }
+    if (this.last_stance && this.last_stance !== this.stance) {
+      this.brain.handleMessage("stanceChange");
+    }
+    this.last_stance = this.stance;
   };
 
   // Do movements.

@@ -202,6 +202,9 @@ define(function() {
       this.terminate();
       this.status = GoalStatus.inactive;
       return true;
+    } else if (msg == "stanceChange") {
+      this.terminate();
+      this.status = GoalStatus.inactive;
     } else {
       return this.forwardToFirstSubgoal(msg);
     }
@@ -212,12 +215,17 @@ define(function() {
    */
   Think.prototype.think = function() {
     if (this.gameType == this.bot.game.GameTypes.ctf) {
-      // Make sure we're not already on offense.
-      if (!this.isFirstSubgoal(Offense)) {
-        // Only set to offense for now.
-        // This goal replaces all others.
-        this.removeAllSubgoals();
-        this.addSubgoal(new Offense(this.bot));
+      // Choose based on manual selection.
+      if (this.bot.isOffense()) {
+        // Make sure we're not already on offense.
+        if (!this.isFirstSubgoal(Offense)) {
+          // Only set to offense for now.
+          // This goal replaces all others.
+          this.removeAllSubgoals();
+          this.addSubgoal(new Offense(this.bot));
+        }
+      } else if (this.bot.isDefence()) {
+        console.log("Not implemented.");
       }
     } else {
       // Center flag game.
@@ -262,6 +270,27 @@ define(function() {
       this.activate();
     }
     return this.status;
+  };
+
+  /**
+   * The Defence goal is concerned with defending a flag in base,
+   * preventing an enemy capture, and chasing and returning the
+   * enemy flag carrier.
+   */
+  var Defence = function(bot) {
+    CompositeGoal.apply(this, arguments);
+  }
+
+  inherits(Defence, CompositeGoal);
+
+  Defence.prototype.activate = function() {
+    this.status = GoalStatus.active;
+    
+  };
+
+  Defence.prototype.handleMessage = function(first_argument) {
+    // Our/Enemy flag has been returned.
+    // Our/Enemy flag has been taken.
   };
 
   /**

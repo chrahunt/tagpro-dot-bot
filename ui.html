@@ -7,9 +7,9 @@
       <button id="bot-stop">Stop</button>
     </div>
     <div class="form-group">
-      <label>Position</label>
+      <label>Stance</label>
       <button id="bot-offense">Offense</button>
-      <button id="bot-defense">Defense</button>
+      <button id="bot-defence">Defence</button>
     </div>
     <div class="form-group">
       <label>Settings</label>
@@ -72,5 +72,11 @@ $('#stage-toggle').click(function(e) {
 });
 $('#bot-options').click(function(e) {
   $('#bot-options-panel').toggle();
+});
+$('#bot-offense').click(function(e) {
+  myBot.attack();
+});
+$('#bot-defence').click(function(e) {
+  myBot.defend();
 });
 </script>
