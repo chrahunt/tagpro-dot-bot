@@ -12,7 +12,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
 
   var Stance = {
     offense: 0,
-    defence: 1
+    defense: 1
   };
 
   /**
@@ -81,15 +81,15 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   };
 
   Bot.prototype.defend = function() {
-    this.stance = Stance.defence;
+    this.stance = Stance.defense;
   };
 
   Bot.prototype.isOffense = function() {
     return this.stance == Stance.offense;
   };
 
-  Bot.prototype.isDefence = function() {
-    return this.stance == Stance.defence;
+  Bot.prototype.isDefense = function() {
+    return this.stance == Stance.defense;
   };
 
   /**
@@ -314,7 +314,12 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
         var spike = spikes[j];
         // Skip spikes that are too far away to matter.
         if (spike.dist(position) - SPIKE_INTERSECTION_RADIUS > veclen) continue;
-        collision = PolyUtils.lineCircleIntersection(position, vector, spike, SPIKE_INTERSECTION_RADIUS);
+        collision = PolyUtils.lineCircleIntersection(
+          position,
+          vector,
+          spike,
+          SPIKE_INTERSECTION_RADIUS
+        );
         if (collision.collides) {
           if (collision.inside) {
             costs[i] += 100;
@@ -480,19 +485,33 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     this.move({});
   }
 
-  Bot.prototype.chat_all = function(chatMessage) {
+  /**
+   * Send a chat message to the active game. Truncates messages that
+   * are too long. Maximum length for a message is 71.
+   * @param {string} message - The message to send.
+   * @param {boolean} [all=true] - Whether the chat should be to all
+   *   players or just to the team.
+   */
+  Bot.prototype.chat = function(message, all) {
+    if (typeof all == 'undefined') all = true;
     if (!this.hasOwnProperty('lastMessage')) this.lastMessage = 0;
     var limit = 500 + 10;
-    var now = new Date();
+    var now = Date.now();
     var timeDiff = now - this.lastMessage;
+    var maxLength = 71;
     if (timeDiff > limit) {
+      if (message.length > maxLength) {
+        message = message.substr(0, maxLength);
+      }
       tagpro.socket.emit("chat", {
-        message: chatMessage,
-        toAll: 1
+        message: message,
+        toAll: all ? 1 : 0
       });
-      this.lastMessage = new Date();
+      this.lastMessage = Date.now();
     } else if (timeDiff >= 0) {
-      setTimeout(chat_all, limit - timeDiff, chatMessage);
+      setTimeout(function() {
+        this.chat(message, all);
+      }.bind(this), limit - timeDiff);
     }
   }
 
