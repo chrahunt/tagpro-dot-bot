@@ -3,10 +3,12 @@
  */
 define(function() {
   /**
-   * The GameState object is responsible for getting information about
-   * the environment, including the player's location within it.
+   * The GameState object is responsible for providing information
+   * about the environment, including the player's location within it.
    * @constructor
    * @alias module:gamestate/browser
+   * @param {TagPro} tagpro - The initialized tagpro object available
+   *   in the browser client execution environment.
    */
   var GameState = function(tagpro) {
     // Initialization
@@ -218,6 +220,7 @@ define(function() {
    * Translate an array location from `tagpro.map` into a point
    * representing the x, y coordinates of the top left of the tile,
    * or the center of the tile if 'center' is true.
+   * @private
    * @param {integer} row - The row of the tile.
    * @param {integer} col - The column of the tile.
    * @return {Point} - The x, y coordinates of the tile.
@@ -226,16 +229,37 @@ define(function() {
     return new Point(40 * row, 40 * col);
   }
 
-  // Get enemy flag coordinates. An object is returned with properties 'point' and 'present'.
-  // if flag is present at point then it will be set to true. If no flag is found, then
-  // null is returned.
+  /**
+   * Indicates whether a player with the given id is visible to the
+   * current player.
+   * @param {integer} id - The id of the player to check visibility
+   *   for.
+   * @return {boolean} - Whether the player is visible.
+   */
+  GameState.prototype.visible = function(id) {
+    return !!this.player(id).draw;
+  };
+
+  /**
+   * Locates the enemy flag. If found and not taken, the `state` of the
+   * returned search result will be true, and false otherwise. If not
+   * found, then null is returned.
+   * @return {?TileSearchResult} - The search result for the enemy flag,
+   *   if found.
+   */
   GameState.prototype.findEnemyFlag = function() {
     // Get flag value.
     var tile = (this.self.team == GameState.Teams.blue ? GameState.Tiles.redflag : GameState.Tiles.blueflag);
     return this.findTile(tile);
   }
 
-  // Get own flag coordinates. See #findEnemyFlag for details.
+  /**
+   * Locates the team flag for the current player. If found and not
+   * taken, the `state` of the returned search result will be true, and
+   * false otherwise. If not found, then null is returned.
+   * @return {?TileSearchResult} - The search result for the flag, if
+   *   found.
+   */
   GameState.prototype.findOwnFlag = function() {
     var tile = (this.self.team == GameState.Teams.blue ? GameState.Tiles.blueflag : GameState.Tiles.redflag);
     return this.findTile(tile);
@@ -371,5 +395,129 @@ define(function() {
       return GameState.GameTypes.yf;
     }
   }
+
+  /**
+   * Find players that are on the team of the current player.
+   * @return {Array.<Player>} - The teammates.
+   */
+  GameState.prototype.teammates = function() {
+    var teammates = [];
+    for (id in this.tagpro.players) {
+      var player = this.tagpro.players[id];
+      if (player.team == this.self.team) {
+        teammates.push(player);
+      }
+    }
+    return teammates;
+  };
+
+  /**
+   * Find players that are not on the team of the current player.
+   * @return {Array.<Player>} - The non-teammate players.
+   */
+  GameState.prototype.enemies = function() {
+    var enemies = [];
+    for (id in this.tagpro.players) {
+      var player = this.tagpro.players[id];
+      if (player.team !== this.self.team) {
+        enemies.push(player);
+      }
+    }
+    return enemies;
+  };
+
+  /**
+   * Check if any of the given players are within a given circular
+   * area. Limits to visible players.
+   * @param {Array.<Player>} players - The players to look for.
+   * @param {Point} center - The center of the point to look for
+   *   players within.
+   * @param {number} radius - The radius to search within.
+   * @return {Array.<Player>} - The players found within the area.
+   */
+  GameState.prototype.playersWithinArea = function(players, center, radius) {
+    var found = players.filter(function(player) {
+      return this.playerWithinArea(player, center, radius);
+    }, this);
+    return found;
+  };
+
+  /**
+   * Check if a given player is within a certain range of a point. If
+   * the player is not visible, then returns false.
+   * @param {Player} player - The player to check the location of.
+   * @param {Point} center - The center of the area to use for location
+   *   determination.
+   * @param {number} radius - The radius of the area centered at the
+   *   point to search within.
+   * @return {boolean} - Whether the player is in the area.
+   */
+  GameState.prototype.playerWithinArea = function(player, center, radius) {
+    if (!this.visible(player.id)) return false;
+    var loc = this.location(player.id);
+    return loc.sub(center).len() < radius;
+  };
+
+  /**
+   * Determines which enemies are in the current player's base.
+   * @return {Aray.<Player>} - The enemies in base.
+   */
+  GameState.prototype.enemiesInBase = function() {
+    var enemies = this.enemies();
+    var base = this.base();
+    var found = this.playersWithinArea(enemies, base.location, base.radius);
+    return found;
+  };
+
+  /**
+   * Determines whether the current player is in-base or not.
+   * @return {boolean} - Whether the current player is in-base.
+   */
+  GameState.prototype.inBase = function() {
+    var base = this.base();
+    return this.playerWithinArea(this.self, base.location, base.radius);
+  };
+
+  /**
+   * Holds information about what is considered the 'base' for the
+   * current player. Defines a circular area centered on the current
+   * player's flag.
+   * @typedef Base
+   * @type {object}
+   * @property {?Point} location - The location of the center of the
+   *   base. If no flag for the current player is found, then this is
+   *   null.
+   * @property {number} radius - The distance away from the center
+   *   point that the base extends.
+   */
+  /**
+   * Returns information about the current player's base that can be
+   * used for determining the number of players/items in base.
+   * @return {Base} - The base location/extent information.
+   */
+  GameState.prototype.base = function(first_argument) {
+    var base = {};
+    // Radius used to determine whether something is in-base.
+    base.radius = 200;
+    base.location = this.findOwnFlag().location;
+    return base;
+  };
+
+  /**
+   * Determines whether or not the current player is within `margin`
+   * of the line between two points.
+   * @param {Point} p - The point to check between the two points.
+   * @param {Point} p1 - The first point.
+   * @param {Point} p2 - The second point.
+   * @param {number} [margin=20] - the distance from the line between p1 and
+   *   p2 that the current player may be to be considered 'between'
+   *   them.
+   * @return {boolean} - Whether the player is between the given points.
+   */
+  GameState.prototype.isInterposed = function(p, p1, p2, margin) {
+    if (typeof margin == 'undefined') margin = 20;
+    return Math.abs(p1.dist(p) + p2.dist(p) - p1.dist(p2)) < margin;
+  };
+
   return GameState;
 });

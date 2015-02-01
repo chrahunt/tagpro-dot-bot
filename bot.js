@@ -109,6 +109,8 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   Bot.prototype._move = function() {
     if (this.goal) {
       this.navigate();
+    } else {
+      this.allUp();
     }
   };
 
@@ -187,6 +189,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
   Bot.prototype.stop = function() {
     Logger.log("bot", "Stopping bot.");
     this.stopped = true;
+    this.goal = false;
     this._clearInterval("think");
     this._clearInterval("update");
 
