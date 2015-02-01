@@ -3,8 +3,8 @@
  * of map-related modules) and low-level steering/locomotion.
  * @module bot
  */
-define(['map/parse-map', 'map/navmesh', 'map/polypartition', 'drawutils', 'bragi', 'goals'],
-function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logger,  Brain) {
+define(['map/navmesh', 'map/polypartition', 'drawutils', 'bragi', 'goals'],
+function(NavMesh,       pp,                  DrawUtils,   Logger,  Brain) {
   // Alias useful classes.
   var Point = pp.Point;
   var Poly = pp.Poly;
@@ -174,9 +174,7 @@ function(mapParser,       NavMesh,       pp,                  DrawUtils,   Logge
     if (!map) {
       setTimeout(this.processMap.bind(this), 250);
     } else {
-      var parsedMap = mapParser.parse(map);
-      
-      this.navmesh = new NavMesh(parsedMap);
+      this.navmesh = new NavMesh(map);
       this.mapInitialized = true;
 
       this.draw.updateBackground("mesh", this.navmesh.polys);
