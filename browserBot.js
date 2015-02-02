@@ -1,6 +1,6 @@
 requirejs.config({
   shim: {
-    'map/clipper': {
+    'map/lib/clipper': {
       exports: 'ClipperLib'
     }
   },
@@ -8,6 +8,10 @@ requirejs.config({
     '*': {
       'bragi': 'bragi-browser'
     }
+  },
+  config: {
+    requirejsUrl: '../require.js',
+    baseUrl: '.'
   },
   waitSeconds: 20
 });
