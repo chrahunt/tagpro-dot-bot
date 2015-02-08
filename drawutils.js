@@ -1,4 +1,4 @@
-define(['map/polypartition'],
+define(['polypartition'],
 function(pp) {
   /**
    * DrawUtils holds canvas-drawing responsibility, including keeping track of

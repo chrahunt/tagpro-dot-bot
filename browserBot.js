@@ -1,16 +1,16 @@
 requirejs.config({
-  shim: {
-    'map/lib/clipper': {
-      exports: 'ClipperLib'
-    }
-  },
   map: {
     '*': {
-      'bragi': 'bragi-browser'
+      'bragi': 'bragi-browser',
+      // For build.
+      //'navmesh': 'map/build/navmesh.min',
+      // For development.
+      'navmesh': 'map/navmesh/navmesh',
+      'polypartition': 'map/navmesh/polypartition'
     }
   },
   config: {
-    requirejsUrl: '../require.js',
+    requirejsUrl: '../../require.js',
     baseUrl: '.'
   },
   waitSeconds: 20
@@ -22,14 +22,14 @@ requirejs.config({
  *
  * @module agent/browser
  */
-require(['bot', 'browserMover', 'browserGameState'],
-function( Bot,   Mover,          GameState) {
+require(['bot', 'browserMover', 'browserGameState', 'bragi'],
+function( Bot,   Mover,          GameState,          Logger) {
   // Initialize browser-specific state and action utilities.
   var state = new GameState(tagpro);
   var mover = new Mover();
 
   // Start.
-  var bot = new Bot(state, mover);
+  var bot = new Bot(state, mover, Logger);
 
   var baseUrl = "http://localhost:8000/";
   

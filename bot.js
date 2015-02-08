@@ -3,12 +3,12 @@
  * of map-related modules) and low-level steering/locomotion.
  * @module bot
  */
-define(['map/navmesh', 'map/polypartition', 'drawutils', 'goals'],
-function(NavMesh,       pp,                  DrawUtils,   Brain) {
+define(['navmesh', 'drawutils', 'goals'],
+function(NavMesh,   DrawUtils,   Brain) {
   // Alias useful classes.
-  var Point = pp.Point;
-  var Poly = pp.Poly;
-  var PolyUtils = pp.PolyUtils;
+  var Point = NavMesh.geom.Point;
+  var Poly = NavMesh.geom.Poly;
+  var PolyUtils = NavMesh.geom.PolyUtils;
 
   var Stance = {
     offense: 0,
