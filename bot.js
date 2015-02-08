@@ -3,8 +3,8 @@
  * of map-related modules) and low-level steering/locomotion.
  * @module bot
  */
-define(['map/navmesh', 'map/polypartition', 'drawutils', 'bragi', 'goals'],
-function(NavMesh,       pp,                  DrawUtils,   Logger,  Brain) {
+define(['map/navmesh', 'map/polypartition', 'drawutils', 'goals'],
+function(NavMesh,       pp,                  DrawUtils,   Brain) {
   // Alias useful classes.
   var Point = pp.Point;
   var Poly = pp.Poly;
@@ -18,8 +18,17 @@ function(NavMesh,       pp,                  DrawUtils,   Logger,  Brain) {
   /**
    * @constructor
    * @alias module:bot
+   * @param {} state
+   * @param {} mover
+   * @param {Logger} [logger]
    */
-  var Bot = function(state, mover) {
+  var Bot = function(state, mover, logger) {
+    if (typeof logger == 'undefined') {
+      logger = {};
+      logger.log = function() {};
+    }
+    this.logger = logger;
+
     // Holds interval ids.
     this.actions = {};
 
@@ -40,14 +49,14 @@ function(NavMesh,       pp,                  DrawUtils,   Logger,  Brain) {
 
   // Initialize functionality dependent on tagpro provisioning playerId.
   Bot.prototype.init = function() {
-    Logger.log("bot", "Initializing Bot.");
+    this.logger.log("bot", "Initializing Bot.");
     // Ensure that the tagpro global object has initialized and allocated us an id.
     if (!this.game.initialized()) {return setTimeout(this.init.bind(this), 250);}
 
     // Self is the TagPro player object.
     this.self = this.game.player();
 
-    Logger.log("bot", "Bot loaded."); // DEBUG
+    this.logger.log("bot", "Bot loaded."); // DEBUG
     
     this._initializeParameters();
 
@@ -174,18 +183,18 @@ function(NavMesh,       pp,                  DrawUtils,   Logger,  Brain) {
     if (!map) {
       setTimeout(this.processMap.bind(this), 250);
     } else {
-      this.navmesh = new NavMesh(map);
+      this.navmesh = new NavMesh(map, this.logger);
       this.mapInitialized = true;
 
       this.draw.updateBackground("mesh", this.navmesh.polys);
-      Logger.log("bot", "Navmesh constructed.");
+      this.logger.log("bot", "Navmesh constructed.");
     }
   }
 
   // Stops the bot. Sets the stop action which all methods need to check for, and also
   // ensures the bot stays still (ish).
   Bot.prototype.stop = function() {
-    Logger.log("bot", "Stopping bot.");
+    this.logger.log("bot", "Stopping bot.");
     this.stopped = true;
     this.goal = false;
     this._clearInterval("think");
@@ -203,10 +212,10 @@ function(NavMesh,       pp,                  DrawUtils,   Logger,  Brain) {
   Bot.prototype.start = function() {
     // Don't execute if bot or map isn't initialized.
     if (!this.initialized || !this.mapInitialized) {
-      Logger.log("bot:info", "Bot not initialized. Cancelling start.");
+      this.logger.log("bot:info", "Bot not initialized. Cancelling start.");
       return;
     } else {
-      Logger.log("bot:info", "Starting bot.");
+      this.logger.log("bot:info", "Starting bot.");
     }
 
     this.stopped = false;
