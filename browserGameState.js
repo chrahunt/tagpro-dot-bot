@@ -47,13 +47,34 @@ define(function() {
   }
 
   /**
+   * Register a function to listen for a socket event.
+   */
+  GameState.prototype.on = function(eventName, fn) {
+    this.tagpro.socket.on(eventName, fn);
+  };
+
+  /**
    * Get player given by id, or `null` if no such player exists. If id
    * is not provided, then the current player is returned.
    */
   GameState.prototype.player = function(id) {
     if (typeof id == 'undefined') id = this.tagpro.playerId;
-    return this.tagpro.players[id];
+    return this.tagpro.players[id] || null;
   }
+
+  /**
+   * Get team of player given by id, or `null` if no such player
+   * exists. If id is not provided, then the id of the current
+   * player is used.
+   */
+  GameState.prototype.team = function(id) {
+    var player = this.player(id);
+    if (player) {
+      return player.team;
+    } else {
+      return null;
+    }
+  };
 
   /**
    * Returns the array of map tiles, or `null` if not initialized.

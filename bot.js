@@ -184,7 +184,23 @@ function(NavMesh,   DrawUtils,   Brain) {
       setTimeout(this.processMap.bind(this), 250);
     } else {
       this.navmesh = new NavMesh(map, this.logger);
+      this.navmesh.onUpdate(function(polys) {
+        this.draw.updateBackground("mesh", polys);
+        this.logger.log("bot", "Navmesh updated.");
+      }.bind(this));
+      // Add tile id of opposite team tile to navmesh impassable
+      if (this.game.team() == this.game.Teams.red) {
+        // Blue gate and red speedpad.
+        this.navmesh.setImpassable([9.3, 14]);
+      } else {
+        // Red gate and blue speedpad.
+        this.navmesh.setImpassable([9.2, 15]);
+      }
+
       this.mapInitialized = true;
+      // Set mapUpdate function of navmesh as the callback to the tagpro
+      // mapupdate packets.
+      this.game.on("mapupdate", this.navmesh.mapUpdate.bind(this.navmesh));
 
       this.draw.updateBackground("mesh", this.navmesh.polys);
       this.logger.log("bot", "Navmesh constructed.");
