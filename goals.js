@@ -1,4 +1,6 @@
-define(function() {
+define(['polypartition'],
+function(pp) {
+  var Point = pp.Point;
   
   function inherits(child, parent) {
     child.prototype = Object.create(parent.prototype);
@@ -194,8 +196,9 @@ define(function() {
   };
 
   /**
-   * Think handles death messages directly, and passes all others to
-   * its subgoals.
+   * Think handles the following message types:
+   * * dead
+   * * stanceChange
    */
   Think.prototype.handleMessage = function(msg) {
     if (msg == "dead") {
@@ -323,6 +326,8 @@ define(function() {
     // Enemy takes flag, resort to out-of-base defense.
     // Our/Enemy flag has been returned.
     // Our/Enemy flag has been taken.
+    // Default behavior.
+    return this.forwardToFirstSubgoal(msg);
   };
 
   /**
@@ -353,6 +358,8 @@ define(function() {
   DefendFlag.prototype.handleMessage = function(msg) {
     // Powerup value consideration.
     // Additional enemies present in base.
+    // Default behavior.
+    return this.forwardToFirstSubgoal(msg);
   };
 
   /**
@@ -556,6 +563,8 @@ define(function() {
     var start = this.bot.game.location();
     var end = this.point;
 
+    this.removeAllSubgoals();
+
     // Add subgoal to calculate the path.
     this.addSubgoal(new CalculatePath(this.bot, start, end, function(path) {
       this.addSubgoal(new FollowPath(this.bot, path));
@@ -568,6 +577,16 @@ define(function() {
     this.status = this.processSubgoals();
 
     return this.status;
+  };
+
+  /**
+   * Handles navUpdate message.
+   */
+  NavigateToPoint.prototype.handleMessage = function(msg) {
+    if (msg == "navUpdate") {
+      // Inactivate so we find a different path.
+      this.status = GoalStatus.inactive;
+    }
   };
 
   /**
@@ -610,6 +629,8 @@ define(function() {
    * @return {Array.<Point>} - The processed path.
    */
   CalculatePath.prototype._postProcessPath = function(path) {
+    // Convert point-like path coordinates to point objects.
+    path = path.map(Point.fromPointLike);
     var spikes = this.bot.game.getspikes();
     // The additional buffer to give the obstacles.
     var buffer = this.bot.spike_buffer || 20;

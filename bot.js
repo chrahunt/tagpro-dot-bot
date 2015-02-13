@@ -6,9 +6,9 @@
 define(['navmesh', 'drawutils', 'goals'],
 function(NavMesh,   DrawUtils,   Brain) {
   // Alias useful classes.
-  var Point = NavMesh.geom.Point;
-  var Poly = NavMesh.geom.Poly;
-  var PolyUtils = NavMesh.geom.PolyUtils;
+  var Point = NavMesh.poly.Point;
+  var Poly = NavMesh.poly.Poly;
+  var PolyUtils = NavMesh.poly.PolyUtils;
 
   var Stance = {
     offense: 0,
@@ -44,7 +44,7 @@ function(NavMesh,   DrawUtils,   Brain) {
 
     this.brain = new Brain(this);
 
-    setTimeout(this.processMap.bind(this), 50);
+    setTimeout(this._processMap.bind(this), 50);
   };
 
   // Initialize functionality dependent on tagpro provisioning playerId.
@@ -67,7 +67,7 @@ function(NavMesh,   DrawUtils,   Brain) {
     this.draw.addVector("seek", 0x00ff00);
     this.draw.addVector("avoid", 0xff0000);
     this.draw.addVector("desired", 0x0000ff);
-    this.draw.addBackground("mesh", 0x00dd00);
+    this.draw.addBackground("mesh", 0x555555);
     this.draw.addPoint("goal", 0x00ff00, "foreground");
     this.draw.addPoint("hit", 0xff0000, "foreground");
 
@@ -112,6 +112,10 @@ function(NavMesh,   DrawUtils,   Brain) {
       this.brain.handleMessage("stanceChange");
     }
     this.last_stance = this.stance;
+    if (this.navUpdate) {
+      this.brain.handleMessage("navUpdate");
+      this.navUpdate = false;
+    }
   };
 
   // Do movements.
@@ -177,17 +181,26 @@ function(NavMesh,   DrawUtils,   Brain) {
 
   /**
    * Process map and generate navigation mesh.
+   * @private
    */
-  Bot.prototype.processMap = function() {
+  Bot.prototype._processMap = function() {
     var map = this.game.map();
     if (!map) {
       setTimeout(this.processMap.bind(this), 250);
     } else {
       this.navmesh = new NavMesh(map, this.logger);
+
+      // Whether the navigation mesh has been updated.
+      this.navUpdate = false;
+
+      // Update navigation mesh visualization and set flag for
+      // sense function to pass message to brain.
       this.navmesh.onUpdate(function(polys) {
         this.draw.updateBackground("mesh", polys);
         this.logger.log("bot", "Navmesh updated.");
+        this.navUpdate = true;
       }.bind(this));
+
       // Add tile id of opposite team tile to navmesh impassable
       if (this.game.team() == this.game.Teams.red) {
         // Blue gate and red speedpad.
@@ -197,13 +210,14 @@ function(NavMesh,   DrawUtils,   Brain) {
         this.navmesh.setImpassable([9.2, 15]);
       }
 
-      this.mapInitialized = true;
       // Set mapUpdate function of navmesh as the callback to the tagpro
       // mapupdate packets.
       this.game.on("mapupdate", this.navmesh.mapUpdate.bind(this.navmesh));
 
       this.draw.updateBackground("mesh", this.navmesh.polys);
       this.logger.log("bot", "Navmesh constructed.");
+
+      this.mapInitialized = true;
     }
   }
 
