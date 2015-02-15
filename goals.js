@@ -567,7 +567,12 @@ function(pp) {
 
     // Add subgoal to calculate the path.
     this.addSubgoal(new CalculatePath(this.bot, start, end, function(path) {
-      this.addSubgoal(new FollowPath(this.bot, path));
+      if (path) {
+        this.addSubgoal(new FollowPath(this.bot, path));
+      } else {
+        // Handle no path being found.
+        // pass back up and retry a specific number of times?
+      }
     }.bind(this)));
   };
 
@@ -586,9 +591,17 @@ function(pp) {
     if (msg == "navUpdate") {
       // Inactivate so we find a different path.
       this.status = GoalStatus.inactive;
+      // todo: incorporate partial path update.
+      // consider button pressing on dynamic obstacles.
     }
   };
 
+  /**
+   * Callback function to the CalculatePath goal.
+   * @callback PathCallback
+   * @param {?Array.<PointLike>} - The path, or null if the path was
+   *   not found.
+   */
   /**
    * This goal calculates a path from the start to the end points and
    * calls the provided callback function after the path is calculated.
@@ -611,8 +624,12 @@ function(pp) {
     this.status = GoalStatus.waiting;
     // Calculate path.
     this.bot.navmesh.calculatePath(this.start, this.end, function(path) {
-      this.status = GoalStatus.completed;
-      path = this._postProcessPath(path);
+      if (path) {
+        this.status = GoalStatus.completed;
+        path = this._postProcessPath(path);
+      } else {
+        this.status = GoalStatus.failed;
+      }
       this.callback(path);
     }.bind(this));
   };
@@ -631,6 +648,11 @@ function(pp) {
   CalculatePath.prototype._postProcessPath = function(path) {
     // Convert point-like path coordinates to point objects.
     path = path.map(Point.fromPointLike);
+
+    // Remove current point.
+    if (path.length > 1) {
+      path.shift();
+    }
     var spikes = this.bot.game.getspikes();
     // The additional buffer to give the obstacles.
     var buffer = this.bot.spike_buffer || 20;
@@ -704,11 +726,12 @@ function(pp) {
   FollowPath.prototype.process = function() {
     this.activateIfInactive();
 
-    this.status = this.processSubgoals();
-
-    // Add next point onto path if possible.
-    if (this.status == GoalStatus.completed && this.path.length !== 2) {
-      this.activate();
+    if (this.status !== GoalStatus.failed) {
+      var status = this.processSubgoals();
+      // Add next point onto path if possible.
+      if (status == GoalStatus.completed && this.path.length !== 2) {
+        this.activate();
+      }
     }
 
     return this.status;
@@ -717,58 +740,65 @@ function(pp) {
   /**
    * Get the next point along the path.
    * @private
+   * @param {integer} [limit] - If provided, limits the number of
+   *   points ahead on the path that will be checked for visibility.
    * @return {Point} - The next point on the path to navigate to.
    */
-  FollowPath.prototype._getNext = function() {
-    var goal = false;
-    var me = this.bot.game.location();
+  FollowPath.prototype._getNext = function(limit) {
+    if (typeof limit == 'undefined') {
+      limit = this.path.length;
+    } else {
+      limit = Math.min(limit, this.path.length);
+    }
     if (!this.path)
       return;
 
+    var goal = false;
     var path = this.path.slice();
     // Find next location to seek out in path.
     if (path.length > 0) {
-      goal = path[0];
-      var cut = false;
+      var me = this.bot.game.location();
+      var anyVisible = false;
       var last_index = 0;
+      goal = path[0];
 
       // Get point furthest along path that is visible from current
       // location.
-      for (var i = 0; i < path.length; i++) {
-        if (this.bot.navmesh.checkVisible(me, path[i])) {
-          goal = path[i];
-          if (i !== 0) {
-            last_index = i;
-            cut = true;
-          }
+      for (var i = 0; i < limit; i++) {
+        var point = path[i];
+        if (this.bot.navmesh.checkVisible(me, point)) {
+          goal = point;
+          last_index = i;
+          anyVisible = true;
         } else {
           // If we're very near a point, remove it and head towards the
           // next one.
           if (me.dist(goal) < 20) {
-            if (i !== 0) {
-              last_index = i;
-              //cut = true;
-            }
+            last_index = i;
           }
-          break;
         }
       }
 
-      if (cut) {
-        path.splice(0, last_index - 1);
-      }
-
-      if (path.length == 1) {
-        goal = path[0];
-        if (me.dist(goal) < 20) {
-          goal = false;
+      if (anyVisible) {
+        path = path.slice(last_index);
+        if (path.length == 1) {
+          goal = path[0];
+          if (me.dist(goal) < 20) {
+            goal = false;
+            this.status = GoalStatus.completed;
+          }
         }
+      } else {
+        goal = false;
+        this.status = GoalStatus.failed;
       }
     }
 
     // Update bot state.
-    this.bot.draw.updatePoint("goal", goal);
-    this.path = path;
+    if (goal) {
+      this.bot.draw.updatePoint("goal", goal);
+      this.path = path;
+    }
     return goal;
   };
 

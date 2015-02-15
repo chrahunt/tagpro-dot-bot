@@ -212,7 +212,7 @@ function(NavMesh,   DrawUtils,   Brain) {
 
       // Set mapUpdate function of navmesh as the callback to the tagpro
       // mapupdate packets.
-      this.game.on("mapupdate", this.navmesh.mapUpdate.bind(this.navmesh));
+      this.navmesh.listen(this.game.tagpro.socket);
 
       this.draw.updateBackground("mesh", this.navmesh.polys);
       this.logger.log("bot", "Navmesh constructed.");
