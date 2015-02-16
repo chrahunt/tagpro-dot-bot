@@ -56,6 +56,11 @@ function(NavMesh,   DrawUtils,   Brain) {
     // Self is the TagPro player object.
     this.self = this.game.player();
 
+    // Sensed keeps track of sensed states.
+    this.sensed = {
+      dead: false
+    };
+
     this.logger.log("bot", "Bot loaded."); // DEBUG
     
     this._initializeParameters();
@@ -105,8 +110,15 @@ function(NavMesh,   DrawUtils,   Brain) {
    * Sense environment changes and send messages to brain if needed.
    */
   Bot.prototype._sense = function() {
-    if (this.self.dead) {
+    // Newly dead.
+    if (this.self.dead && !this.sensed.dead) {
+      this.sensed.dead = true;
       this.brain.handleMessage("dead");
+    }
+    // Newly living.
+    if (this.sensed.dead && !this.self.dead) {
+      this.sensed.dead = false;
+      this.brain.handleMessage("alive");
     }
     if (this.last_stance && this.last_stance !== this.stance) {
       this.brain.handleMessage("stanceChange");

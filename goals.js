@@ -77,6 +77,11 @@ function(pp) {
     return this.status == GoalStatus.failed;
   };
 
+  /**
+   * Acts as a goal with subgoals.
+   * @constructor
+   * @param {Bot} bot
+   */
   CompositeGoal = function(bot) {
     Goal.apply(this, arguments);
     this.subgoals = [];
@@ -164,6 +169,7 @@ function(pp) {
 
   /**
    * Clean up.
+   * @override
    */
   CompositeGoal.prototype.terminate = function() {
     this.removeAllSubgoals();
@@ -177,13 +183,22 @@ function(pp) {
     CompositeGoal.apply(this, arguments);
     // Game type, either ctf or cf
     this.gameType = this.bot.game.gameType();
+    this.alive = this.bot.game.alive();
   };
 
   inherits(Think, CompositeGoal);
 
+  /**
+   * Initiate thinking if alive.
+   * @override
+   */
   Think.prototype.activate = function() {
     this.status = GoalStatus.active;
-    this.think();
+    if (this.alive) {
+      this.think();
+    } else {
+      this.status = GoalStatus.inactive;
+    }
   };
 
   Think.prototype.process = function() {
@@ -199,15 +214,22 @@ function(pp) {
    * Think handles the following message types:
    * * dead
    * * stanceChange
+   * * alive
+   * @override
    */
   Think.prototype.handleMessage = function(msg) {
     if (msg == "dead") {
       this.terminate();
       this.status = GoalStatus.inactive;
+      this.alive = false;
+      return true;
+    } else if (msg == "alive") {
+      this.alive = true;
       return true;
     } else if (msg == "stanceChange") {
       this.terminate();
       this.status = GoalStatus.inactive;
+      return true;
     } else {
       return this.forwardToFirstSubgoal(msg);
     }
@@ -703,6 +725,8 @@ function(pp) {
   var FollowPath = function(bot, path) {
     CompositeGoal.apply(this, arguments);
     this.path = path;
+    this.iteration = 0;
+    this.reactivate_threshold = 20;
   };
 
   inherits(FollowPath, CompositeGoal);
@@ -714,7 +738,15 @@ function(pp) {
 
     // try to navigate to front of path.
     if (destination) {
-      this.addSubgoal(new SeekToPoint(this.bot, destination));
+      if (this.subgoals.length > 0) {
+        var subgoal = this.subgoals[0];
+        if (subgoal.point && subgoal.point.neq(destination)) {
+          this.removeAllSubgoals();
+          this.addSubgoal(new SeekToPoint(this.bot, destination));
+        }
+      } else {
+        this.addSubgoal(new SeekToPoint(this.bot, destination));
+      }
     } else {
       this.status = GoalStatus.failed;
     }
@@ -724,6 +756,11 @@ function(pp) {
   };
 
   FollowPath.prototype.process = function() {
+    this.iteration++;
+    if (this.iteration == this.reactivate_threshold) {
+      this.status = GoalStatus.inactive;
+      this.iteration = 0;
+    }
     this.activateIfInactive();
 
     if (this.status !== GoalStatus.failed) {
@@ -837,6 +874,13 @@ function(pp) {
     }
 
     return this.status;
+  };
+
+  /**
+   * Clean up.
+   */
+  SeekToPoint.prototype.terminate = function() {
+    this.bot.setTarget(false);
   };
 
   return Think;

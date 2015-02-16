@@ -262,6 +262,16 @@ define(function() {
   };
 
   /**
+   * Indicates whether a player with the given id is alive.
+   * @param {integer} id - The id of the player to check for
+   *   liveliness.
+   * @return {boolean} - Whether the player is alive.
+   */
+  GameState.prototype.alive = function(id) {
+    return !this.player(id).dead;
+  };
+
+  /**
    * Locates the enemy flag. If found and not taken, the `state` of the
    * returned search result will be true, and false otherwise. If not
    * found, then null is returned.
