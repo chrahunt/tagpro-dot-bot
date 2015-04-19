@@ -1,7 +1,7 @@
 /**
  * A Bot is responsible for decision making, navigation (with the aid
  * of map-related modules) and low-level steering/locomotion.
- * @module bot
+ * @exports Bot
  */
 define(['navmesh', 'drawutils', 'goals'],
 function(NavMesh,   DrawUtils,   Brain) {
@@ -17,7 +17,7 @@ function(NavMesh,   DrawUtils,   Brain) {
 
   /**
    * @constructor
-   * @alias module:bot
+   * @name Bot
    * @param {} state
    * @param {} mover
    * @param {Logger} [logger]

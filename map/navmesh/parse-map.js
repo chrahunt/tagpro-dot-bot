@@ -40,8 +40,8 @@ function(  ActionValues,      pp) {
    */
 
   /**
-   * The 2d tile grid from `tagpro.map`, or a similar 2d grid resulting
-   * from an operation on the original.
+   * The 2d tile grid from `tagpro.map`, or a similar 2d array
+   * representation of the state of the game map.
    * @typedef MapTiles
    * @type {Array.<Array.<number>>}
    */
@@ -514,6 +514,7 @@ function(  ActionValues,      pp) {
 
   /**
    * The returned value from the map parsing function.
+   * @private
    * @typedef ParsedMap
    * @type {object}
    * @property {Array.<MPShape>} walls - The parsed walls.

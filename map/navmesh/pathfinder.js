@@ -126,6 +126,7 @@ function(   PriorityQueue,      pp) {
    * using the Poly's themselves as keys, and an array of Poly's as
    * values, where the Polys in the array are neighbors of the Poly
    * that was the key.
+   * @private
    * @typedef AdjacencyGrid
    * @type {Object.<Poly, Array<Poly>>}
    */

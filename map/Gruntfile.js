@@ -39,8 +39,8 @@ module.exports = function(grunt) {
         options: {
           destination: 'doc',
           configure: 'conf.json',
-          private: false//,
-          //template: 'node_modules/grunt-jsdoc/node_modules/'
+          private: false,
+          template: 'node_modules/grunt-jsdoc/node_modules/ink-docstrap/template'
         }
       }
     },

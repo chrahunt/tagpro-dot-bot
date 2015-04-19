@@ -417,6 +417,11 @@ function(poly2tri) {
     }
   };
 
+  /**
+   * This object holds static methods for performing operations on
+   * polygons.
+   * @type {Object}
+   */
   var PolyUtils = {};
   exports.PolyUtils = PolyUtils;
 
@@ -689,13 +694,17 @@ function(poly2tri) {
 
   /**
    * The Point class used by poly2tri.
+   * @private
    * @typedef P2TPoint
    */
+
   /**
    * A polygon for use with poly2tri.
+   * @private
    * @typedef P2TPoly
    * @type {Array.<P2TPoint>}
    */
+
   /**
    * Convert a polygon into format required by poly2tri.
    * @private
@@ -725,4 +734,3 @@ function(poly2tri) {
 
   return exports;
 });
-

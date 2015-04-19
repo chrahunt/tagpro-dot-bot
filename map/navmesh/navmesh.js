@@ -1,13 +1,5 @@
 /**
- * A NavMesh represents the traversable area of a map and gives
- * utilities for pathfinding.
- * Usage:
- * ```javascript
- * // Assuming the 2d map tiles array is available:
- * var navmesh = new NavMesh(map);
- * navmesh.calculatePath(currentlocation, targetLocation, callback);
- * ```
- * @module NavMesh
+ * @exports NavMesh
  */
 define(['./polypartition', './parse-map', './pathfinder', './lib/clipper', './worker!./aStarWorker.js'],
 function(  pp,                MapParser,     Pathfinder,     ClipperLib,     workerPromise) {
@@ -15,10 +7,18 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   var Poly = pp.Poly;
   var Edge = pp.Edge;
   var PolyUtils = pp.PolyUtils;
-  
+
   /**
+   * A NavMesh represents the traversable area of a map and offers an
+   * interface to facilitate pathfinding over those traversable areas.
+   * Usage:
+   * ```javascript
+   * // Assuming the 2d map tiles array is available:
+   * var navmesh = new NavMesh(map);
+   * navmesh.calculatePath(currentlocation, targetLocation, callback);
+   * ```
+   * @name NavMesh
    * @constructor
-   * @alias module:NavMesh
    * @param {MapTiles} map - The 2d array defining the map tiles.
    * @param {Logger} [logger] - The logger to use.
    */
@@ -49,7 +49,9 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   };
 
   /**
-   * Callback for path calculation requests.
+   * Callback for path calculation requests. If a path is not found
+   * then `null` will be passed to the function. The path includes the
+   * start and end points provided to the path calculation function.
    * @callback PathCallback
    * @param {?Array.<PointLike>} - The calculated path beginning with
    *   the start point, and ending at the target point. If no path is
@@ -111,6 +113,8 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   };
 
   /**
+   * The update information for a single tile as sent in `mapupdate`
+   * socket events.
    * @typedef TileUpdate
    * @type {object}
    * @property {integer} x - The x index of the tile to update in the
@@ -199,7 +203,8 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   };
 
   /**
-   * A function called when the navigation mesh updates.
+   * A function called when the navigation mesh updates. Should not
+   * alter passed arguments.
    * @callback UpdateCallback
    * @param {Array.<Poly>} - The polys defining the current navigation
    *   mesh.
@@ -1137,6 +1142,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * traversable region, if we consider the non-hole area of the
    * polygon as being traversable, or the opposite, if we consider
    * the non-hole area as being solid, blocking movement.
+   * @private
    * @typedef Area
    * @type {object}
    * @property {Poly} polygon - The polygon defining the outside of the
@@ -1144,6 +1150,7 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
    * @property {Array.<Poly>} holes - The holes in the polygon for this
    *   area.
    */
+
   /**
    * Given a PolyTree, return an array of areas assuming even-odd fill
    * ordering.
@@ -1331,16 +1338,20 @@ function(  pp,                MapParser,     Pathfinder,     ClipperLib,     wor
   /**
    * A point in ClipperLib is just an object with properties
    * X and Y corresponding to a point.
+   * @private
    * @typedef CLPoint
    * @type {object}
    * @property {integer} X - The x coordinate of the point.
    * @property {integer} Y - The y coordinate of the point.
    */
+
   /**
    * A shape in ClipperLib is simply an array of CLPoints.
+   * @private
    * @typedef CLShape
    * @type {Array.<CLPoint>}
    */
+
   /**
    * Takes a Poly and converts it into a ClipperLib polygon.
    * @private
