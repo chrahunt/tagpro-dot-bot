@@ -1,0 +1,38 @@
+{
+  "name": "tagpro-dot-bot",
+  "version": "0.2.0",
+  "description": "TagPro .Bot",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chrahunt/tagpro-bot-js.git"
+  },
+  "keywords": [
+    "tagpro",
+    "ai",
+    "bot"
+  ],
+  "browser": {
+    "bragi": "./lib/bragi.min.js"
+  },
+  "author": "",
+  "bugs": {
+    "url": "https://github.com/chrahunt/tagpro-bot-js/issues"
+  },
+  "homepage": "https://github.com/chrahunt/tagpro-bot-js#readme",
+  "devDependencies": {
+    "browserify": "^10.2.4",
+    "browserify-shim": "^3.8.8",
+    "gulp": "^3.9.0",
+    "gulp-rename": "^1.2.2",
+    "gulp-util": "^3.0.5",
+    "lodash.assign": "^3.2.0",
+    "vinyl-source-stream": "^1.1.0",
+    "watchify": "^3.2.1"
+  },
+  "dependencies": {
+    "tagpro-navmesh": "^0.9.5"
+  }
+}

@@ -1,4 +1,4 @@
-#! /usr/bin/env python2
+#! /usr/bin/env python3
 # From http://stackoverflow.com/a/21957017/1698058
 from http.server import SimpleHTTPRequestHandler, HTTPServer
 import http.server
