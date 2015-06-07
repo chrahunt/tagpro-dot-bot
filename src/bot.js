@@ -237,7 +237,7 @@ Bot.prototype._processMap = function() {
 
     this.mapInitialized = true;
   }
-}
+};
 
 // Stops the bot. Sets the stop action which all methods need to check for, and also
 // ensures the bot stays still (ish).
@@ -254,7 +254,7 @@ Bot.prototype.stop = function() {
   // Stop moving.
   this.allUp();
   this._removeDraw();
-}
+};
 
 // Restarts the bot.
 Bot.prototype.start = function() {
@@ -272,7 +272,7 @@ Bot.prototype.start = function() {
   this._setInterval("update", this.update, 20);
   this.draw.showVector("seek");
   this.draw.showVector("avoid");
-}
+};
 
 /**
  * Navigates a path, assuming the end target is static.
@@ -289,7 +289,7 @@ Bot.prototype.navigate = function() {
       this._update(desired_vector.mul(2));
     }
   }.bind(this), 0);
-}
+};
 
 /**
  * @param {number} n - The number of vectors to consider.
@@ -329,11 +329,11 @@ Bot.prototype._steering = function(n) {
       }
     }
     return idx;
-  }
+  };
 
   var idx = heuristic(costs);
   return vectors[idx];
-}
+};
 
 // Takes in vectors, associates cost with each.
 // Returns vector of costs.
@@ -394,31 +394,38 @@ Bot.prototype._inv_Avoid = function(vectors) {
     }
   });
   return costs;
-}
+};
 
+/**
+ * Takes an array of unit vectors and assigns a penalty to each
+ * depending on how much they do not align.
+ * @param {[type]} vectors [description]
+ * @return {[type]} [description]
+ */
 Bot.prototype._inv_Seek = function(vectors) {
   var costs = vectors.map(function() {
     return 0;
   });
-  var params = this.parameters.steering["seek"];
-  var p = this.game.location();
+
   if (this.goal) {
+    var params = this.parameters.steering.seek;
+    var p = this.game.location();
     var goal = this.goal.sub(p).normalize();
-  } else {
-    var goal = false;
-  }
-  vectors.forEach(function(vector, i) {
-    if (goal) {
+    
+    vectors.forEach(function(vector, i) {
       var val = vector.dot(goal);
-      if (val < 0) {
+      if (val <= 0) {
+        // Vector points away from or at 90 degrees to goal.
         costs[i] = 20;
       } else {
+        // Vector points towards goal, with less penalty the closer it
+        // points.
         costs[i] = 1 / val;
       }
-    }
-  });
+    });
+  }
   return costs;
-}
+};
 
 /**
  * Clear the interval identified by `name`.
@@ -430,7 +437,7 @@ Bot.prototype._clearInterval = function(name) {
     clearInterval(this.actions[name]);
     delete this.actions[name];
   }
-}
+};
 
 /**
  * Set the given function as an function executed on an interval
@@ -446,7 +453,7 @@ Bot.prototype._setInterval = function(name, fn, time) {
   if (!this._isInterval(name)) {
     this.actions[name] = setInterval(fn.bind(this), time);
   }
-}
+};
 
 /**
  * Check whether the interval with the given name is active.
@@ -456,12 +463,12 @@ Bot.prototype._setInterval = function(name, fn, time) {
  */
 Bot.prototype._isInterval = function(name) {
   return this.actions.hasOwnProperty(name);
-}
+};
 
 Bot.prototype._removeDraw = function() {
   this.draw.hideVector("seek");
   this.draw.hideVector("avoid");
-}
+};
 
 /**
  * Scale a vector so that one of the components is maximized.
@@ -478,7 +485,7 @@ Bot.prototype._scaleVector = function(vec, max) {
   }
   var scaled = vec.mul(ratio);
   return scaled;
-}
+};
 
 /**
  * Takes the desired velocity as a parameter and presses the keys
@@ -486,8 +493,8 @@ Bot.prototype._scaleVector = function(vec, max) {
  * @param {Point} vec - The desired velocity.
  */
 Bot.prototype._update = function(vec) {
-  if (vec.x == 0 && vec.y == 0) return;
-  var params = this.parameters.steering["update"];
+  if (vec.x === 0 && vec.y === 0) return;
+  var params = this.parameters.steering.update;
   // The cutoff for the difference between a desired velocity and the
   // current velocity is small enough that no action needs to be taken.
   var ACTION_THRESHOLD = params.action_threshold;
@@ -534,14 +541,14 @@ Bot.prototype._update = function(vec) {
     dirs.down = true;
   }
   this.move(dirs);
-}
+};
 
 /**
  * Stop all movement.
  */
 Bot.prototype.allUp = function() {
   this.move({});
-}
+};
 
 /**
  * Send a chat message to the active game. Truncates messages that
@@ -571,4 +578,4 @@ Bot.prototype.chat = function(message, all) {
       this.chat(message, all);
     }.bind(this), limit - timeDiff);
   }
-}
+};

@@ -14,11 +14,6 @@ module.exports = DrawUtils;
 
 // Initialize drawing functions.
 DrawUtils.prototype.init = function() {
-  if (typeof tagpro.renderer == "undefined") {
-    console.log("Can't handle old canvas!");
-    return;
-  }
-
   this.self = tagpro.players[tagpro.playerId];
 
   // Store items to be drawn.
@@ -27,6 +22,11 @@ DrawUtils.prototype.init = function() {
   this.points = {};
   this.circles = {};
 
+  // Guard against sprites not being created.
+  if (!this.self.sprites) {
+    tagpro.renderer.setupPlayerSprites(this.self);
+  }
+  
   // Add vectors container to player sprites object.
   this.self.sprites.vectors = new PIXI.Graphics();
   this.self.sprite.addChild(this.self.sprites.vectors);
