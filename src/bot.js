@@ -45,10 +45,6 @@ var Bot = function(state, mover, logger) {
   this.initialized = false;
   this.mapInitialized = false;
   this.init();
-
-  this.brain = new Brain(this);
-
-  setTimeout(this._processMap.bind(this), 50);
 };
 
 module.exports = Bot;
@@ -62,13 +58,6 @@ Bot.prototype.init = function() {
   // Self is the TagPro player object.
   this.self = this.game.player();
 
-  // Sensed keeps track of sensed states.
-  this.sensed = {
-    dead: false
-  };
-
-  this.logger.log("bot", "Bot loaded."); // DEBUG
-  
   this._initializeParameters();
 
   // Set up drawing.
@@ -82,8 +71,19 @@ Bot.prototype.init = function() {
   this.draw.addPoint("goal", 0x00ff00, "foreground");
   this.draw.addPoint("hit", 0xff0000, "foreground");
 
+  this.game.onMap(this._processMap.bind(this));
+
+  this.brain = new Brain(this);
+
+  // Sensed keeps track of sensed states.
+  this.sensed = {
+    dead: false
+  };
+
+  this.logger.log("bot", "Bot loaded."); // DEBUG
+
   this.initialized = true;
-}
+};
 
 /**
  * Update function that drives the rest of the ongoing bot behavior.
@@ -195,48 +195,43 @@ Bot.prototype._initializeParameters = function() {
     top_speed_threshold: 0.1,
     current_vector: 0
   };
-}
+};
 
 /**
  * Process map and generate navigation mesh.
  * @private
  */
-Bot.prototype._processMap = function() {
-  var map = this.game.map();
-  if (!map) {
-    setTimeout(this.processMap.bind(this), 250);
+Bot.prototype._processMap = function(map) {
+  this.navmesh = new NavMesh(map, this.logger);
+
+  // Whether the navigation mesh has been updated.
+  this.navUpdate = false;
+
+  // Update navigation mesh visualization and set flag for
+  // sense function to pass message to brain.
+  this.navmesh.onUpdate(function(polys) {
+    this.draw.updateBackground("mesh", polys);
+    this.logger.log("bot", "Navmesh updated.");
+    this.navUpdate = true;
+  }.bind(this));
+
+  // Add tile id of opposite team tile to navmesh impassable
+  if (this.game.team() == this.game.Teams.red) {
+    // Blue gate and red speedpad.
+    this.navmesh.setImpassable([9.3, 14]);
   } else {
-    this.navmesh = new NavMesh(map, this.logger);
-
-    // Whether the navigation mesh has been updated.
-    this.navUpdate = false;
-
-    // Update navigation mesh visualization and set flag for
-    // sense function to pass message to brain.
-    this.navmesh.onUpdate(function(polys) {
-      this.draw.updateBackground("mesh", polys);
-      this.logger.log("bot", "Navmesh updated.");
-      this.navUpdate = true;
-    }.bind(this));
-
-    // Add tile id of opposite team tile to navmesh impassable
-    if (this.game.team() == this.game.Teams.red) {
-      // Blue gate and red speedpad.
-      this.navmesh.setImpassable([9.3, 14]);
-    } else {
-      // Red gate and blue speedpad.
-      this.navmesh.setImpassable([9.2, 15]);
-    }
-
-    // Set mapUpdate function of navmesh as the callback to the tagpro
-    // mapupdate packets.
-    this.navmesh.listen(this.game.tagpro.socket);
-
-    this.draw.updateBackground("mesh", this.navmesh.polys);
-    this.logger.log("bot", "Navmesh constructed.");
-
-    this.mapInitialized = true;
+    // Red gate and blue speedpad.
+    this.navmesh.setImpassable([9.2, 15]);
   }
+
+  // Set mapUpdate function of navmesh as the callback to the tagpro
+  // mapupdate packets.
+  this.navmesh.listen(this.game.tagpro.socket);
+
+  this.draw.updateBackground("mesh", this.navmesh.polys);
+  this.logger.log("bot", "Navmesh constructed.");
+
+  this.mapInitialized = true;
 };
 
 // Stops the bot. Sets the stop action which all methods need to check for, and also

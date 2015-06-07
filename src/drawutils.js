@@ -22,11 +22,9 @@ DrawUtils.prototype.init = function() {
   this.points = {};
   this.circles = {};
 
-  // Guard against sprites not being created.
-  if (!this.self.sprites) {
-    tagpro.renderer.setupPlayerSprites(this.self);
-  }
-  
+  // Guard against properties not being created.
+  tagpro.renderer.updatePlayer(this.self);
+
   // Add vectors container to player sprites object.
   this.self.sprites.vectors = new PIXI.Graphics();
   this.self.sprite.addChild(this.self.sprites.vectors);

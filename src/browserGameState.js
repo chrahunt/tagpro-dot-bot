@@ -18,10 +18,21 @@ var GameState = function(tagpro) {
       ball: 19
     }
   };
-  this.self = this.player();
+  this._initialized = false;
+  this.onInitialized(this.init.bind(this));
 };
 
 module.exports = GameState;
+
+/**
+ * Initialization method called when the tagpro game state has
+ * been initialized.
+ * @private
+ */
+GameState.prototype.init = function() {
+  this.self = this.player();
+  this._initialized = true;
+};
 
 /**
  * Set up browser-based optimizations that will assist in retrieving
@@ -40,8 +51,46 @@ GameState.prototype.optimizations = function() {
   };
 };
 
+/**
+ * Ensure that the game is initialized, including a playerId
+ * provisioned, players set, and renderer started.
+ * @return {boolean} - Whether the game has been initialized.
+ */
 GameState.prototype.initialized = function() {
-  return !(typeof tagpro !== 'object' || !tagpro.playerId);
+  return this._initialized;
+};
+
+/**
+ * Call function when map has been initialized. Callback is called with
+ * the map as an argument. Doesn't assume the floor and walltile arrays
+ * have been constructed.
+ * @param {Function} callback - The callback for the map.
+ */
+GameState.prototype.onMap = function(callback) {
+  if (this.initialized() && tagpro.map) {
+    callback(tagpro.map);
+  } else {
+    tagpro.socket.on('map', function(e) {
+      callback(e.tiles);
+    });
+  }
+};
+
+/**
+ * Call function once the game has been initialized.
+ * @param {Function} callback - The function to call
+ */
+GameState.prototype.onInitialized = function(callback) {
+  if (typeof tagpro !== "undefined" &&
+    tagpro.playerId &&
+    tagpro.players &&
+    tagpro.renderer.renderer) {
+    callback();
+  } else {
+    setTimeout(function() {
+      this.onInitialized(callback);
+    }.bind(this), 50);
+  }
 };
 
 /**

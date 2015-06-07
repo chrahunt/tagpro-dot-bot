@@ -9,31 +9,20 @@ var GameState = require('./browserGameState');
  *
  * @module agent/browser
  */
-function waitForTagproPlayer(fn) {
-  if (typeof tagpro !== "undefined" && tagpro.players && tagpro.playerId) {
-    fn();
-  } else {
-    setTimeout(function() {
-      waitForTagproPlayer(fn);
-    });
-  }
-}
 
-waitForTagproPlayer(function() {
-  // Initialize browser-specific state and action utilities.
-  var state = new GameState(tagpro);
-  var mover = new Mover();
+// Initialize browser-specific state and action utilities.
+var state = new GameState(tagpro);
+var mover = new Mover();
 
-  // Start.
-  var bot = new Bot(state, mover, Logger);
+// Start.
+var bot = new Bot(state, mover, Logger);
 
-  var baseUrl = "http://localhost:8000/src/";
+var baseUrl = "http://localhost:8000/src/";
 
-  // Set up UI.
-  $.get(baseUrl + "ui.html", function(data) {
-    $('body').append(data);
-  });
-
-  // For debugging.
-  global.myBot = bot;
+// Set up UI.
+$.get(baseUrl + "ui.html", function(data) {
+  $('body').append(data);
 });
+
+// For debugging.
+global.myBot = bot;
