@@ -4,7 +4,8 @@ var gulp = require('gulp'),
     gutil = require('gulp-util'),
     rename = require('gulp-rename'),
     source = require('vinyl-source-stream'),
-    assign = require('lodash.assign');
+    assign = require('lodash.assign'),
+    notify = require('gulp-notify');
 
 var sourceFile = 'src/browserBot.js';
 gulp.task('build', function() {
@@ -25,9 +26,13 @@ gulp.task('watch', function() {
     var b = watchify(browserify(opts));
     function bundle() {
         return b.bundle()
-            .on('error', gutil.log.bind(gutil, "Browserify Error"))
+            .on('error', notify.onError(function (err) {
+                gutil.log("Browserify Error");
+                return "Build Failed";
+            }))
             .pipe(source(sourceFile.replace(/^src\//, '')))
-            .pipe(gulp.dest('./build'));
+            .pipe(gulp.dest('./build'))
+            .pipe(notify("Build Succeeded"));
     }
     b.on('update', bundle);
     b.on('log', gutil.log);
