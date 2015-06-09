@@ -27,7 +27,7 @@ gulp.task('watch', function() {
     function bundle() {
         return b.bundle()
             .on('error', notify.onError(function (err) {
-                gutil.log("Browserify Error");
+                gutil.log("Browserify Error: " + err.message);
                 return "Build Failed";
             }))
             .pipe(source(sourceFile.replace(/^src\//, '')))
