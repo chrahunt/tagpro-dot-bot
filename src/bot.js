@@ -3,6 +3,7 @@ var NavMesh = require('tagpro-navmesh');
 var Brain = require('./brain');
 var DrawUtils = require('./drawutils');
 var geo = require('./geometry');
+var ActionManager = require('./actionmanager');
 
 /**
  * A Bot is responsible for decision making, navigation (with the aid
@@ -27,14 +28,11 @@ var Stance = {
  * @param {Logger} [logger]
  */
 var Bot = function(state, mover, logger) {
-  if (typeof logger == 'undefined') {
-    logger = {};
-    logger.log = function() {};
-  }
+  if (typeof logger == 'undefined') logger = { log: function() {} };
   this.logger = logger;
 
-  // Holds interval ids.
-  this.actions = {};
+  // Holds actions executed on an interval.
+  this.actions = new ActionManager();
 
   // Hold environment-specific movement and game state objects.
   this.move = mover.move.bind(mover);
@@ -49,11 +47,14 @@ var Bot = function(state, mover, logger) {
 
 module.exports = Bot;
 
-// Initialize functionality dependent on tagpro provisioning playerId.
+/**
+ * Initialize bot.
+ * @private
+ */
 Bot.prototype.init = function() {
   this.logger.log("bot", "Initializing Bot.");
   // Ensure that the tagpro global object has initialized and allocated us an id.
-  if (!this.game.initialized()) {return setTimeout(this.init.bind(this), 250);}
+  if (!this.game.initialized()) { return setTimeout(this.init.bind(this), 250); }
 
   // Self is the TagPro player object.
   this.self = this.game.player();
@@ -79,78 +80,11 @@ Bot.prototype.init = function() {
   this.sensed = {
     dead: false
   };
+  this.lastSense = 0;
 
   this.logger.log("bot", "Bot loaded."); // DEBUG
 
   this.initialized = true;
-};
-
-/**
- * Update function that drives the rest of the ongoing bot behavior.
- */
-Bot.prototype.update = function() {
-  this.brain.process();
-  this._move();
-  // Sense any real-time, big-implication environment actions and
-  // send to brain.
-  this._sense();
-};
-
-Bot.prototype.attack = function() {
-  this.stance = Stance.offense;
-};
-
-Bot.prototype.defend = function() {
-  this.stance = Stance.defense;
-};
-
-Bot.prototype.isOffense = function() {
-  return this.stance == Stance.offense;
-};
-
-Bot.prototype.isDefense = function() {
-  return this.stance == Stance.defense;
-};
-
-/**
- * Sense environment changes and send messages to brain if needed.
- */
-Bot.prototype._sense = function() {
-  // Newly dead.
-  if (this.self.dead && !this.sensed.dead) {
-    this.sensed.dead = true;
-    this.brain.handleMessage("dead");
-  }
-  // Newly living.
-  if (this.sensed.dead && !this.self.dead) {
-    this.sensed.dead = false;
-    this.brain.handleMessage("alive");
-  }
-  if (this.last_stance && this.last_stance !== this.stance) {
-    this.brain.handleMessage("stanceChange");
-  }
-  this.last_stance = this.stance;
-  if (this.navUpdate) {
-    this.brain.handleMessage("navUpdate");
-    this.navUpdate = false;
-  }
-};
-
-// Do movements.
-Bot.prototype._move = function() {
-  if (this.goal) {
-    this.navigate();
-  } else {
-    this.allUp();
-  }
-};
-
-/**
- * Sets the given point as the target for the bot to navigate to.
- * @param {Point} point - The point to navigate to.
- */
-Bot.prototype.setTarget = function(point) {
-  this.goal = point;
 };
 
 /**
@@ -179,18 +113,18 @@ Bot.prototype._initializeParameters = function() {
 
   // Hold steering parameters.
   this.parameters.steering = {};
-  this.parameters.steering["seek"] = {
+  this.parameters.steering.seek = {
     max_see_ahead: this.parameters.intervals.navigate
   };
 
-  this.parameters.steering["avoid"] = {
+  this.parameters.steering.avoid = {
     max_see_ahead: 2e3, // Time in ms to look ahead for a collision.
     max_avoid_force: 35,
     buffer: 25,
     spike_intersection_radius: this.parameters.game.radius.spike + this.parameters.game.radius.ball
   };
 
-  this.parameters.steering["update"] = {
+  this.parameters.steering.update = {
     action_threshold: 0.01,
     top_speed_threshold: 0.1,
     current_vector: 0
@@ -234,14 +168,84 @@ Bot.prototype._processMap = function(map) {
   this.mapInitialized = true;
 };
 
+/**
+ * Update function that drives the rest of the ongoing bot behavior.
+ */
+Bot.prototype.update = function() {
+  this.brain.process();
+  this._move();
+  // Sense any real-time, big-implication environment actions and
+  // send to brain.
+  this._sense();
+};
+
+Bot.prototype.attack = function() {
+  this.stance = Stance.offense;
+};
+
+Bot.prototype.defend = function() {
+  this.stance = Stance.defense;
+};
+
+Bot.prototype.isOffense = function() {
+  return this.stance == Stance.offense;
+};
+
+Bot.prototype.isDefense = function() {
+  return this.stance == Stance.defense;
+};
+
+/**
+ * Sense environment changes and send messages to brain if needed.
+ * @private
+ */
+Bot.prototype._sense = function() {
+  // Newly dead.
+  if (this.self.dead && !this.sensed.dead) {
+    this.sensed.dead = true;
+    this.brain.handleMessage("dead");
+  }
+  // Newly living.
+  if (this.sensed.dead && !this.self.dead) {
+    this.sensed.dead = false;
+    this.brain.handleMessage("alive");
+  }
+  if (this.last_stance && this.last_stance !== this.stance) {
+    this.brain.handleMessage("stanceChange");
+  }
+  this.last_stance = this.stance;
+  if (this.navUpdate) {
+    this.brain.handleMessage("navUpdate");
+    this.navUpdate = false;
+  }
+  this.lastSense = Date.now();
+};
+
+// Do movements.
+Bot.prototype._move = function() {
+  if (this.goal) {
+    this.navigate();
+  } else {
+    this.allUp();
+  }
+};
+
+/**
+ * Sets the given point as the target for the bot to navigate to.
+ * @param {Point} point - The point to navigate to.
+ */
+Bot.prototype.setTarget = function(point) {
+  this.goal = point;
+};
+
 // Stops the bot. Sets the stop action which all methods need to check for, and also
 // ensures the bot stays still (ish).
 Bot.prototype.stop = function() {
   this.logger.log("bot", "Stopping bot.");
   this.stopped = true;
   this.goal = false;
-  this._clearInterval("think");
-  this._clearInterval("update");
+  this.actions.remove("think");
+  this.actions.remove("update");
 
   // Stop thinking.
   this.brain.terminate();
@@ -263,8 +267,8 @@ Bot.prototype.start = function() {
 
   this.stopped = false;
   this.brain.think();
-  this._setInterval("think", this.brain.think.bind(this.brain), 500);
-  this._setInterval("update", this.update, 20);
+  this.actions.add("think", this.brain.think.bind(this.brain), 500);
+  this.actions.add("update", this.update.bind(this), 20);
   this.draw.showVector("seek");
   this.draw.showVector("avoid");
 };
@@ -420,44 +424,6 @@ Bot.prototype._inv_Seek = function(vectors) {
     });
   }
   return costs;
-};
-
-/**
- * Clear the interval identified by `name`.
- * @private
- * @param {string} name - The interval to clear.
- */
-Bot.prototype._clearInterval = function(name) {
-  if (this._isInterval(name)) {
-    clearInterval(this.actions[name]);
-    delete this.actions[name];
-  }
-};
-
-/**
- * Set the given function as an function executed on an interval
- * given by `time`. Function is bound to `this`, and can be removed
- * using `_clearInterval`. If an interval function with the given name
- * is already set, the function does nothing.
- * @private
- * @param {string} name
- * @param {Function} fn
- * @param {integer} time - The time in ms.
- */
-Bot.prototype._setInterval = function(name, fn, time) {
-  if (!this._isInterval(name)) {
-    this.actions[name] = setInterval(fn.bind(this), time);
-  }
-};
-
-/**
- * Check whether the interval with the given name is active.
- * @private
- * @param {string} name
- * @return {boolean} - Whether the interval is active.
- */
-Bot.prototype._isInterval = function(name) {
-  return this.actions.hasOwnProperty(name);
 };
 
 Bot.prototype._removeDraw = function() {
