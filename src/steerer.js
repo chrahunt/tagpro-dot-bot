@@ -54,15 +54,14 @@ Steerer.prototype._steering = function(n) {
   // Do selection.
   var heuristic = function(costs) {
     var w = 1;
-    var summedCosts = [];
-    for (var i = 0; i < costs[0].length; i++) {
-      summedCosts[i] = 0;
-    }
-    summedCosts = costs.reduce(function(summed, cost) {
+    // Add multiple cost arrays into one.
+    var summedCosts = costs.reduce(function(summed, cost) {
       return summed.map(function(sum, i) {
         return sum + cost[i];
       });
-    }, summedCosts);
+    }, zeroArray(costs[0].length));
+
+    // Get index of lowest.
     var min = summedCosts[0];
     var idx = 0;
     for (var i = 1; i < summedCosts.length; i++) {
@@ -81,9 +80,7 @@ Steerer.prototype._steering = function(n) {
 // Takes in vectors, associates cost with each.
 // Returns vector of costs.
 Steerer.prototype._inv_Avoid = function(vectors) {
-  var costs = vectors.map(function() {
-    return 0;
-  });
+  var costs = zeroArray(vectors.length);
   var params = this.parameters.avoid;
 
   // For determining intersection and cost of distance.
@@ -149,9 +146,7 @@ Steerer.prototype._inv_Avoid = function(vectors) {
  * @return {[type]} [description]
  */
 Steerer.prototype._inv_Seek = function(vectors) {
-  var costs = vectors.map(function() {
-    return 0;
-  });
+  var costs = zeroArray(vectors.length);
 
   if (this.botstate.target) {
     var params = this.parameters.seek;
@@ -207,4 +202,13 @@ function smoothArray(array, smoothing) {
   }
 
   return newArray;
+}
+
+// Returns an array of the given length initialized with zeros.
+function zeroArray(length) {
+  var arr = [];
+  for (var i = 0; i < length; i++) {
+    arr[i] = 0;
+  }
+  return arr;
 }

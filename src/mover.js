@@ -14,7 +14,7 @@ var Mover = function(state, opts) {
   this.dirs = ["up", "down", "left", "right"];
   this.socket = state.socket;
   this.state = state;
-  this.params = {
+  this.parameters = {
     action_threshold: 0.05,
     top_speed_threshold: 0.1,
     current_vector: 0
@@ -74,9 +74,9 @@ Mover.prototype.press = function(state) {
 Mover.prototype.move = function(vec) {
   // The cutoff for the difference between a desired velocity and the
   // current velocity is small enough that no action needs to be taken.
-  var ACTION_THRESHOLD = this.params.action_threshold;
-  var CURRENT_VECTOR = this.params.current_vector;
-  var TOP_SPEED_THRESHOLD = this.params.top_speed_threshold;
+  var ACTION_THRESHOLD = this.parameters.action_threshold;
+  var CURRENT_VECTOR = this.parameters.current_vector;
+  var TOP_SPEED_THRESHOLD = this.parameters.top_speed_threshold;
   var current = this.state.pVelocity(CURRENT_VECTOR);
   var topSpeed = this.state.player().ms;
   var isTopSpeed = {};

@@ -1,44 +1,86 @@
 <div id="bot-ui">
-  <button id="bot-options">Show/Hide Options</button>
-  <div id="bot-options-panel">
-    <div class="form-group">
-      <label>Power</label>
-      <button id="bot-start">Start</button>
-      <button id="bot-stop">Stop</button>
+  <div id="bot-controls" class="bot-ui-panel">
+    <div class="bot-ui-header">Bot Controls</div>
+    <div class="bot-ui-content">
+      <div class="form-group">
+        <button id="bot-power">Start Bot</button>
+      </div>
+      <div class="form-group">
+        <label>Stance</label>
+        <button id="bot-offense">Offense</button>
+        <button id="bot-defense">Defense</button>
+      </div>
     </div>
-    <div class="form-group">
-      <label>Stance</label>
-      <button id="bot-offense">Offense</button>
-      <button id="bot-defense">Defense</button>
+  </div>
+  <div id="other-controls" class="bot-ui-panel">
+    <div class="bot-ui-header">Other Controls</div>
+    <div class="bot-ui-content">
+      <div class="form-group">
+        <label>Settings</label>
+        <button id="stage-toggle">Turn off stage</button>
+      </div>
     </div>
-    <div class="form-group">
-      <label>Settings</label>
-      <button id="stage-toggle">Turn off stage</button>
-    </div>
-    <div class="form-group">
-      <label>Steering</label>
-      <button id="bot-steering-force">Force-based</button>
-      <button id="bot-steering-behavior">Behavior-based</button>
-    </div>
+  </div>
+  <div id="bot-values" class="bot-ui-panel">
+    <div class="bot-ui-header">Values</div>
+    <div class="bot-ui-content"></div>
+  </div>
+  <div id="bot-parameters" class="bot-ui-panel">
+    <div class="bot-ui-header">Bot Parameters</div>
+    <div class="bot-ui-content"></div>
   </div>
 </div>
 
 <style>
-#bot-options-panel {
-  display: none;
-  width: auto;
-  background-color: rgba(120, 120, 120, 0.9);
-  padding: 15px;
+.bot-ui-panel {
+    margin-bottom: 10px;
 }
 
-#bot-options-panel:last-child {
-  margin-bottom: 0px;
+.bot-ui-header {
+    padding: 5px;
+    font-weight: bold;
+    border: 1px solid #aaa;
+    border-radius: 5px 5px 0px 0px;
+}
+
+.bot-ui-content {
+    padding: 5px;
+    border: 1px solid #aaa;
+    border-top: none;
+    background-color: #BFB8B8;
+}
+
+.param-section {
+    margin-bottom: 5px;
+    padding-left: 5px;
+    border-left: 1px solid black;
+}
+
+.section-header {
+    font-weight: bold;
+    margin-bottom: 3px;
+}
+
+.param-control input {
+    float: right;
+    width: 40px;
+}
+
+.param-control {
+    height: 25px;
+}
+
+.param-section:last-child {
+    margin-bottom: 0px;
 }
 
 #bot-ui {
   position: absolute;
   top: 45px;
   left: 25px;
+  overflow-y: scroll;
+  height: 90%;
+  padding-right: 5px;
 }
 
 .form-group {
@@ -58,20 +100,10 @@
   padding: 5px;
 }
 </style>
-
 <script>
-$('#bot-stop').click(function(e) {
-  myBot.stop();
-});
-$('#bot-start').click(function(e) {
-  myBot.start();
-});
 $('#stage-toggle').click(function(e) {
   tagpro.renderer.stage.visible = !tagpro.renderer.stage.visible;
   $(this).text("Turn " + (tagpro.renderer.stage.visible ? "off" : "on") + " stage");
-});
-$('#bot-options').click(function(e) {
-  $('#bot-options-panel').toggle();
 });
 $('#bot-offense').click(function(e) {
   myBot.attack();

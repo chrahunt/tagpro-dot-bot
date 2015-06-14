@@ -57,7 +57,6 @@ Bot.prototype.init = function() {
   // Ensure that the tagpro global object has initialized and allocated us an id.
   if (!this.game.initialized()) { return setTimeout(this.init.bind(this), 250); }
 
-  this._initializeParameters();
 
   this.game.onMap(this._processMap.bind(this));
 
@@ -71,17 +70,22 @@ Bot.prototype.init = function() {
   };
   this.lastSense = 0;
 
-  this.logger.log("bot", "Bot loaded."); // DEBUG
+  this.initializeParameters();
 
+  // Information.
+  this.info = {
+    updates: 50 // Updates/second default value
+  };
   this.initialized = true;
+  this.logger.log("bot", "Bot loaded."); // DEBUG
 };
 
 /**
- * Initialize the parameters for the various variable functions of
- * the bot.
+ * Initialize the parameters for the bot itself and exposes the
+ * parameters for its modules.
  * @private
  */
-Bot.prototype._initializeParameters = function() {
+Bot.prototype.initializeParameters = function() {
   this.parameters = {};
   
   // Holds information about the game physics parameters.
@@ -98,6 +102,9 @@ Bot.prototype._initializeParameters = function() {
     think: 500,
     update: 20
   };
+
+  this.parameters.moving = this.mover.parameters;
+  this.parameters.steering = this.steerer.parameters;
 };
 
 /**
@@ -144,6 +151,14 @@ Bot.prototype.update = function() {
   // Sense any real-time, big-implication environment actions and
   // send to brain.
   this._sense();
+  var now = performance.now();
+  if (!this.lastUpdate) {
+    this.lastUpdate = now;
+  } else {
+    var diff = this.lastUpdate - now;
+    var persecond = 1e3 / diff;
+    this.info.update = this.info.update * 0.9 + persecond * 0.1;
+  }
 };
 
 Bot.prototype.attack = function() {
