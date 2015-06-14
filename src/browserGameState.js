@@ -31,6 +31,7 @@ module.exports = GameState;
  */
 GameState.prototype.init = function() {
   this.self = this.player();
+  this.socket = this.tagpro.socket;
   this._initialized = true;
 };
 
@@ -70,7 +71,7 @@ GameState.prototype.onMap = function(callback) {
   if (this.initialized() && tagpro.map) {
     callback(tagpro.map);
   } else {
-    tagpro.socket.on('map', function(e) {
+    this.socket.on('map', function(e) {
       callback(e.tiles);
     });
   }
@@ -97,7 +98,7 @@ GameState.prototype.onInitialized = function(callback) {
  * Register a function to listen for a socket event.
  */
 GameState.prototype.on = function(eventName, fn) {
-  this.tagpro.socket.on(eventName, fn);
+  this.socket.on(eventName, fn);
 };
 
 /**
@@ -105,8 +106,8 @@ GameState.prototype.on = function(eventName, fn) {
  * is not provided, then the current player is returned.
  */
 GameState.prototype.player = function(id) {
-  if (typeof id == 'undefined') id = this.tagpro.playerId;
-  return this.tagpro.players[id] || null;
+  if (typeof id == 'undefined') id = tagpro.playerId;
+  return tagpro.players[id] || null;
 };
 
 /**
@@ -127,8 +128,8 @@ GameState.prototype.team = function(id) {
  * Returns the array of map tiles, or `null` if not initialized.
  */
 GameState.prototype.map = function() {
-  if (typeof this.tagpro !== 'object' || !this.tagpro.map) return null;
-  return this.tagpro.map;
+  if (typeof tagpro !== 'object' || !tagpro.map) return null;
+  return tagpro.map;
 };
 
 /**
@@ -150,58 +151,71 @@ GameState.prototype.location = function(id) {
  *   location for. Defaults to id of current player.
  * @param {number} ahead - The amount to look ahead to determine the
  *   predicted location. Default interpretation is in ms.
- * @param {boolean} [steps=false] - Whether to interpret `ahead` as
- *   the number of steps in the physics simulation.
+ * @param {boolean} [timeInSteps=false] - Whether to interpret `ahead`
+ *   as the number of steps in the physics simulation.
  * @return {Point} - The predicted location of the player.
  */
-GameState.prototype.pLocation = function(id, ahead, steps) {
+GameState.prototype.pLocation = function(id, ahead, timeInSteps) {
   if (arguments.length == 1) {
     id = this.tagpro.playerId;
-    ahead = this._msToSteps(arguments[0]);
+    ahead = arguments[0];
+    timeInSteps = false;
   } else if (arguments.length == 2) {
     if (typeof arguments[1] == 'boolean') {
+      id = this.tagpro.playerId;
       ahead = arguments[0];
-      steps = arguments[1];
-      if (!steps) {
-        ahead = this._msToSteps(ahead);
-      }
+      timeInSteps = arguments[1];
+    } else {
+      timeInSteps = false;
     }
   }
-  if (steps) {
-    var time = this._msToSteps(ahead);
-  } else {
-    var time = ahead;
+  var steps = timeInSteps ? this._msToSteps(ahead) : ahead;
+  var player = this.player(id);
+  var v = this.velocity(id);
+  // Formula parameters.
+  var damping = 0.5;
+  var dt = (1.0 / 60);
+  // Initial velocity.
+  var v_x = v.x,
+      v_y = v.y;
+  // Holds displacement.
+  var d_x = 0,
+      d_y = 0;
+  var change_x = 0,
+      change_y = 0;
+  if (player.pressing.up) {
+    change_y = -1;
+  } else if (player.pressing.down) {
+    change_y = 1;
   }
-  var cv = this.velocity(id);
-  // Bound the predicted velocity 
-  var pv = this.pVelocity(id, 1, true);
-  var current_location = this.location(id);
-  var dx = 0;
-  var dy = 0;
+  if (player.pressing.left) {
+    change_x = -1;
+  } else if (player.pressing.right) {
+    change_x = 1;
+  }
+  // Change in acceleration each step.
+  var acc_term_x = player.ac * change_x,
+      acc_term_y = player.ac * change_y;
+  // Max speed check each step.
+  var ms_x = player.ms * change_x,
+      ms_y = player.ms * change_y;
+  var damping_factor = 1 - damping * dt;
 
-  if (Math.abs(pv.x) == this.self.ms) {
-    // Find point that max velocity was reached.
-    var step = Math.abs(pv.x - cv.x) / this.self.ac;
-    var accTime = step * (1 / 60);
-    dx += accTime * ((pv.x + cv.x) / 2);
-    dx += (time - accTime) * pv.x;
-  } else {
-    dx += time * ((pv.x + cv.x) / 2);
+  for (var step = 0; step < steps; step++) {
+    if (v_x < ms_x) v_x += acc_term_x;
+    if (v_y < ms_y) v_y += acc_term_y;
+    v_x *= damping_factor;
+    v_y *= damping_factor;
+    d_x += v_x * dt;
+    d_y += v_y * dt;
   }
-
-  if (Math.abs(pv.y) == this.self.ms) {
-    var step = Math.abs(pv.y - cv.y) / this.self.ac;
-    var accTime = step * (1 / 60);
-    dy += accTime * ((pv.y + cv.y) / 2);
-    dy += (time - accTime) * pv.y;
-  } else {
-    dy += time * ((pv.y + cv.y) / 2);
-  }
-  var dl = new Point(dx, dy);
+  var coord_scale = 100;
   // Convert from physics units to x, y coordinates.
-  dl = dl.mul(100);
+  var d = new Point(d_x * coord_scale, d_y * coord_scale);
 
-  return current_location.add(dl);
+  var current_location = this.location(id);
+
+  return current_location.add(d);
 };
 
 /**
@@ -281,13 +295,12 @@ GameState.prototype.pVelocity = function(id, ahead, steps) {
  * @return {integer} - The number of steps.
  */
 GameState.prototype._msToSteps = function(ms) {
-  return ms / this.parameters.game.step;
+  return Math.ceil(ms / this.parameters.game.step);
 };
 
 /**
  * Translate an array location from `tagpro.map` into a point
- * representing the x, y coordinates of the top left of the tile,
- * or the center of the tile if 'center' is true.
+ * representing the x, y coordinates of the top left of the tile.
  * @private
  * @param {integer} row - The row of the tile.
  * @param {integer} col - The column of the tile.
@@ -480,7 +493,7 @@ GameState.prototype.gameType = function() {
  */
 GameState.prototype.teammates = function() {
   var teammates = [];
-  for (id in this.tagpro.players) {
+  for (var id in this.tagpro.players) {
     var player = this.tagpro.players[id];
     if (player.team == this.self.team) {
       teammates.push(player);
@@ -495,7 +508,7 @@ GameState.prototype.teammates = function() {
  */
 GameState.prototype.enemies = function() {
   var enemies = [];
-  for (id in this.tagpro.players) {
+  for (var id in this.tagpro.players) {
     var player = this.tagpro.players[id];
     if (player.team !== this.self.team) {
       enemies.push(player);

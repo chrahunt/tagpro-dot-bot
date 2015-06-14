@@ -4,6 +4,7 @@ var Brain = require('./brain');
 var DrawUtils = require('./drawutils');
 var geo = require('./geometry');
 var ActionManager = require('./actionmanager');
+var Mover = require('./mover');
 
 /**
  * A Bot is responsible for decision making, navigation (with the aid
@@ -20,28 +21,45 @@ var Stance = {
   defense: 1
 };
 
+function smoothArray(array, smoothing) {
+  var newArray = [];
+  for (i = 0; i < array.length; i++) {
+    var sum = 0;
+
+    for (index = i - smoothing; index <= i + smoothing; index++) {
+      var thisIndex = index < 0 ? index + array.length : index % array.length;
+      sum += array[thisIndex];
+    }
+    newArray[i] = sum / ((smoothing * 2) + 1);
+  }
+
+  return newArray;
+}
+
+function clamp(val, min, max) {
+  return Math.max(min, Math.min(val, max));
+}
+
 /**
  * @constructor
  * @name Bot
  * @param {} state
- * @param {} mover
  * @param {Logger} [logger]
  */
-var Bot = function(state, mover, logger) {
+var Bot = function(state, logger) {
   if (typeof logger == 'undefined') logger = { log: function() {} };
   this.logger = logger;
 
   // Holds actions executed on an interval.
   this.actions = new ActionManager();
 
-  // Hold environment-specific movement and game state objects.
-  this.move = mover.move.bind(mover);
   this.game = state;
 
   this.stance = Stance.offense;
 
   this.initialized = false;
   this.mapInitialized = false;
+  this.stopped = true;
   this.init();
 };
 
@@ -82,6 +100,11 @@ Bot.prototype.init = function() {
   };
   this.lastSense = 0;
 
+  var mover = new Mover(this.game.socket);
+  // Hold environment-specific movement and game state objects.
+  this.move = mover.move.bind(mover);
+  this.press = mover.press.bind(mover);
+
   this.logger.log("bot", "Bot loaded."); // DEBUG
 
   this.initialized = true;
@@ -99,7 +122,7 @@ Bot.prototype._initializeParameters = function() {
   this.parameters.game = {
     step: 1e3 / 60, // Physics step size in ms.
     radius: {
-      spike: 14,
+      spike: 15,
       ball: 19
     }
   };
@@ -118,16 +141,9 @@ Bot.prototype._initializeParameters = function() {
   };
 
   this.parameters.steering.avoid = {
-    max_see_ahead: 2e3, // Time in ms to look ahead for a collision.
-    max_avoid_force: 35,
-    buffer: 25,
+    max_see_ahead: 200, // Time in ms to look ahead for a collision.
+    assumed_difference: 35,
     spike_intersection_radius: this.parameters.game.radius.spike + this.parameters.game.radius.ball
-  };
-
-  this.parameters.steering.update = {
-    action_threshold: 0.01,
-    top_speed_threshold: 0.1,
-    current_vector: 0
   };
 };
 
@@ -144,7 +160,6 @@ Bot.prototype._processMap = function(map) {
   // Update navigation mesh visualization and set flag for
   // sense function to pass message to brain.
   this.navmesh.onUpdate(function(polys) {
-    this.draw.updateBackground("mesh", polys);
     this.logger.log("bot", "Navmesh updated.");
     this.navUpdate = true;
   }.bind(this));
@@ -162,7 +177,6 @@ Bot.prototype._processMap = function(map) {
   // mapupdate packets.
   this.navmesh.listen(this.game.tagpro.socket);
 
-  this.draw.updateBackground("mesh", this.navmesh.polys);
   this.logger.log("bot", "Navmesh constructed.");
 
   this.mapInitialized = true;
@@ -269,8 +283,6 @@ Bot.prototype.start = function() {
   this.brain.think();
   this.actions.add("think", this.brain.think.bind(this.brain), 500);
   this.actions.add("update", this.update.bind(this), 20);
-  this.draw.showVector("seek");
-  this.draw.showVector("avoid");
 };
 
 /**
@@ -280,12 +292,11 @@ Bot.prototype.navigate = function() {
   // Don't execute function if bot is stopped.
   if (this.stopped) return;
 
-  var desired_vector = this._steering(32);
-  this.draw.updateVector("desired", desired_vector.mul(10));
+  this.desired_vector = this._steering(32);
   // Apply desired vector after a short delay.
   setTimeout(function() {
     if (!this.stopped) {
-      this._update(desired_vector.mul(2));
+      this._update(this.desired_vector.mul(2));
     }
   }.bind(this), 0);
 };
@@ -306,6 +317,7 @@ Bot.prototype._steering = function(n) {
   var costs = [];
   costs.push(this._inv_Avoid(vectors));
   costs.push(this._inv_Seek(vectors));
+  this.costs = costs;
 
   // Do selection.
   var heuristic = function(costs) {
@@ -340,17 +352,17 @@ Bot.prototype._inv_Avoid = function(vectors) {
   var costs = vectors.map(function() {
     return 0;
   });
+  var params = this.parameters.steering.avoid;
 
-  var BALL_DIAMETER = 38;
   // For determining intersection and cost of distance.
-  var SPIKE_INTERSECTION_RADIUS = 55;
+  var SPIKE_INTERSECTION_RADIUS = params.spike_intersection_radius;
   // For determining how many ms to look ahead for the location to use
   // as the basis for seeing the impact a direction will have.
-  var LOOK_AHEAD = 40;
+  var LOOK_AHEAD = params.max_see_ahead;
 
   // For determining how much difference heading towards a single direction
   // will make.
-  var DIR_LOOK_AHEAD = 40;
+  var DIR_LOOK_AHEAD = params.assumed_difference;
 
   // Ray with current position as basis.
   var position = this.game.location();
@@ -362,6 +374,7 @@ Bot.prototype._inv_Avoid = function(vectors) {
 
   var spikes = this.game.getspikes();
 
+  var bad_directions = [];
   vectors.forEach(function(vector, i) {
     vector = relative_location.add(vector.mul(DIR_LOOK_AHEAD));
     var veclen = vector.len();
@@ -383,14 +396,16 @@ Bot.prototype._inv_Avoid = function(vectors) {
         } else {
           // Calculate cost.
           costs[i] += SPIKE_INTERSECTION_RADIUS / position.dist(collision.point);
-          /*var tmpDist2 = position.dist2(collision.point);
-          if (tmpDist2 < minDist2) {
-            minCollision = collision;
-            minDist2 = tmpDist2;
-          }*/
         }
       }
     }
+  });
+  vectors.forEach(function (vector, i) {
+    if (bad_directions.indexOf(i) !== -1) return;
+
+    costs[i] += bad_directions.reduce(function (sum, j) {
+      return vector.dot(vectors[j]) * costs[j] + sum;
+    }, 0);
   });
   return costs;
 };
@@ -419,7 +434,7 @@ Bot.prototype._inv_Seek = function(vectors) {
       } else {
         // Vector points towards goal, with less penalty the closer it
         // points.
-        costs[i] = 1 / val;
+        costs[i] = clamp(1 / val, 0, 20);
       }
     });
   }
@@ -455,7 +470,11 @@ Bot.prototype._scaleVector = function(vec, max) {
  */
 Bot.prototype._update = function(vec) {
   if (vec.x === 0 && vec.y === 0) return;
-  var params = this.parameters.steering.update;
+  var params = {
+    action_threshold: 0.01,
+    top_speed_threshold: 0.1,
+    current_vector: 0
+  };
   // The cutoff for the difference between a desired velocity and the
   // current velocity is small enough that no action needs to be taken.
   var ACTION_THRESHOLD = params.action_threshold;
@@ -501,14 +520,14 @@ Bot.prototype._update = function(vec) {
   } else {
     dirs.down = true;
   }
-  this.move(dirs);
+  this.press(dirs);
 };
 
 /**
  * Stop all movement.
  */
 Bot.prototype.allUp = function() {
-  this.move({});
+  this.press({});
 };
 
 /**

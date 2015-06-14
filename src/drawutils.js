@@ -323,3 +323,11 @@ DrawUtils.prototype._convertPolyToPixiPoly = function(poly) {
   point_array = point_array.concat(point_array[0], point_array[1]);
   return new PIXI.Polygon(point_array);
 };
+
+/**
+ * Add child to main ball sprite.
+ * @param {[type]} container [description]
+ */
+DrawUtils.prototype.addSpriteChild = function(container) {
+  this.self.sprite.addChild(container);
+};

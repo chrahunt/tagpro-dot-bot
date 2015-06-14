@@ -5,7 +5,6 @@
  * be set as the move function of the object created from this
  * class.
  * @constructor
- * @alias module:mover/browser
  * @param {Socket} socket - The socket to interface with.
  * @param {object} [options] - Options governing the movement behavior.
  */
@@ -17,6 +16,9 @@ var Mover = function(socket, opts) {
     top_speed_threshold: 0.1,
     current_vector: 0
   };
+  if (typeof opts !== "undefined") {
+    // merge options.
+  }
 
   // Override emit to have one key press count.
   this.socket.emit = (function() {
@@ -32,7 +34,7 @@ var Mover = function(socket, opts) {
       socketEmit.apply(this.socket, arguments);
     };
   })();
-  this.move({});
+  this.press({});
 };
 
 module.exports = Mover;

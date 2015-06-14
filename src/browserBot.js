@@ -1,7 +1,7 @@
 var Logger = require('bragi');
 var Bot = require('./bot');
-var Mover = require('./browserMover');
 var GameState = require('./browserGameState');
+var BotDraw = require('./botdraw');
 
 /**
  * The Browser Agent is an implementation of the TagPro agent meant
@@ -10,7 +10,11 @@ var GameState = require('./browserGameState');
  * @module agent/browser
  */
 function waitForDeps(fn) {
-  if (typeof tagpro !== "undefined" && tagpro.socket) {
+  if (typeof tagpro !== "undefined" &&
+    tagpro.socket &&
+    tagpro.renderer.renderer &&
+    tagpro.players && tagpro.players[tagpro.playerId] &&
+    tagpro.players[tagpro.playerId].sprites) {
     fn();
   } else {
     setTimeout(function () {
@@ -28,10 +32,10 @@ $.get(baseUrl + "ui.html", function(data) {
 waitForDeps(function () {
   // Initialize browser-specific state and action utilities.
   var state = new GameState(tagpro);
-  var mover = new Mover(tagpro.socket);
 
   // Start.
-  var bot = new Bot(state, mover, Logger);
+  var bot = new Bot(state, Logger);
+  var botdraw = new BotDraw(bot);
 
   // For debugging.
   global.myBot = bot;
