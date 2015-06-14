@@ -32,6 +32,7 @@ module.exports = GameState;
 GameState.prototype.init = function() {
   this.self = this.player();
   this.socket = this.tagpro.socket;
+  this.optimizations();
   this._initialized = true;
 };
 
@@ -251,23 +252,31 @@ GameState.prototype.velocity = function(id) {
  *   the number of steps in the physics simulation.
  * @return {Point} - The predicted velocity of the player.
  */
-GameState.prototype.pVelocity = function(id, ahead, steps) {
+GameState.prototype.pVelocity = function(id, ahead, timeInSteps) {
   if (arguments.length == 1) {
     id = this.tagpro.playerId;
-    ahead = this._msToSteps(arguments[0]);
+    ahead = arguments[0];
+    timeInSteps = false;
   } else if (arguments.length == 2) {
     if (typeof arguments[1] == 'boolean') {
+      id = this.tagpro.playerId;
       ahead = arguments[0];
-      steps = arguments[1];
-      if (!steps) {
-        ahead = this._msToSteps(ahead);
-      }
+      timeInSteps = arguments[1];
+    } else {
+      timeInSteps = false;
     }
   }
-  var vel = this.velocity(id);
+  var steps = timeInSteps ? this._msToSteps(ahead) : ahead;
   var player = this.player(id);
-
-  var change_x = 0, change_y = 0;
+  var v = this.velocity(id);
+  // Formula parameters.
+  var damping = 0.5;
+  var dt = (1.0 / 60);
+  // Initial velocity.
+  var v_x = v.x,
+      v_y = v.y;
+  var change_x = 0,
+      change_y = 0;
   if (player.pressing.up) {
     change_y = -1;
   } else if (player.pressing.down) {
@@ -278,13 +287,21 @@ GameState.prototype.pVelocity = function(id, ahead, steps) {
   } else if (player.pressing.right) {
     change_x = 1;
   }
-  var plx, ply;
-  plx = vel.x + player.ac * ahead * change_x;
-  plx = Math.sign(plx) * Math.min(Math.abs(plx), player.ms);
-  ply = vel.y + player.ac * ahead * change_y;
-  ply = Math.sign(ply) * Math.min(Math.abs(ply), player.ms);
+  // Change in acceleration each step.
+  var acc_term_x = player.ac * change_x,
+      acc_term_y = player.ac * change_y;
+  // Max speed check each step.
+  var ms_x = player.ms * change_x,
+      ms_y = player.ms * change_y;
+  var damping_factor = 1 - damping * dt;
+  for (var step = 0; step < steps; step++) {
+    if (v_x < ms_x) v_x += acc_term_x;
+    if (v_y < ms_y) v_y += acc_term_y;
+    v_x *= damping_factor;
+    v_y *= damping_factor;
+  }
 
-  return new Point(plx, ply);
+  return new Point(v_x, v_y);
 };
 
 /**

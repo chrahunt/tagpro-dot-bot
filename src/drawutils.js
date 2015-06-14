@@ -183,6 +183,10 @@ DrawUtils.prototype.hidePoint = function(name) {
   this.points[name].container.visible = false;
 };
 
+DrawUtils.prototype.showPoint = function(name) {
+  this.points[name].container.visible = true;
+};
+
 /**
  * Represents a 2d vector emanating from the center of the player,
  * along with attributes for drawing.

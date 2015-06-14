@@ -1,18 +1,21 @@
 /**
- * The Mover is responsible for executing actions within the
- * browser environment and managing keypresses.
- * Agents should utilize a personal `move` function that should
- * be set as the move function of the object created from this
- * class.
+ * The Mover is responsible for executing actions to change agent
+ * velocity in the game environment.
+ * 
+ * Agents should initialize then use the `move` function for a higher-
+ * level interface, or `press` for the low-level keypress interface.
  * @constructor
- * @param {Socket} socket - The socket to interface with.
+ * @param {GameState} state - The game state interface, which can
+ *   provide the player's current velocity as well as the socket to
+ *   interface with.
  * @param {object} [options] - Options governing the movement behavior.
  */
-var Mover = function(socket, opts) {
+var Mover = function(state, opts) {
   this.dirs = ["up", "down", "left", "right"];
-  this.socket = socket;
+  this.socket = state.socket;
+  this.state = state;
   this.params = {
-    action_threshold: 0.01,
+    action_threshold: 0.05,
     top_speed_threshold: 0.1,
     current_vector: 0
   };
@@ -34,6 +37,7 @@ var Mover = function(socket, opts) {
       socketEmit.apply(this.socket, arguments);
     };
   })();
+  // Initialize.
   this.press({});
 };
 
@@ -65,17 +69,16 @@ Mover.prototype.press = function(state) {
 /**
  * Takes a vector representing the desired velocity and presses the
  * keys that make it happen.
- * @param {Point} vec
+ * @param {Point} vec - The desired velocity.
  */
 Mover.prototype.move = function(vec) {
-  if (vec.x === 0 && vec.y === 0) return;
   // The cutoff for the difference between a desired velocity and the
   // current velocity is small enough that no action needs to be taken.
   var ACTION_THRESHOLD = this.params.action_threshold;
   var CURRENT_VECTOR = this.params.current_vector;
   var TOP_SPEED_THRESHOLD = this.params.top_speed_threshold;
-  var current = this.game.pVelocity(CURRENT_VECTOR);
-  var topSpeed = this.self.ms;
+  var current = this.state.pVelocity(CURRENT_VECTOR);
+  var topSpeed = this.state.player().ms;
   var isTopSpeed = {};
   // actual speed can vary +- 0.02 of top speed/
   isTopSpeed.x = Math.abs(topSpeed - Math.abs(current.x)) < TOP_SPEED_THRESHOLD;
@@ -114,6 +117,5 @@ Mover.prototype.move = function(vec) {
   } else {
     dirs.down = true;
   }
-  this.move(dirs);
-
+  this.press(dirs);
 };

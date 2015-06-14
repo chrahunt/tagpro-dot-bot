@@ -280,7 +280,7 @@ inherits(Offense, CompositeGoal);
 Offense.prototype.activate = function() {
   this.status = GoalStatus.active;
   var destination;
-  if (!this.bot.self.flag) {
+  if (!this.bot.game.player().flag) {
     destination = this.bot.game.findEnemyFlag();
     this.addSubgoal(new NavigateToPoint(this.bot, destination.location));
   } else {
@@ -832,7 +832,6 @@ FollowPath.prototype._getNext = function(limit) {
 
   // Update bot state.
   if (goal) {
-    this.bot.draw.updatePoint("goal", goal);
     this.path = path;
   }
   return goal;
@@ -855,7 +854,7 @@ SeekToPoint.prototype.activate = function() {
   this.status = GoalStatus.active;
 
   // Set bot steering target.
-  this.bot.setTarget(this.point);
+  this.bot.setState("target", this.point);
 };
 
 SeekToPoint.prototype.process = function() {
@@ -867,7 +866,7 @@ SeekToPoint.prototype.process = function() {
   // Check if at position.
   if (position.dist(this.point) < 20) {
     this.status = GoalStatus.completed;
-    this.bot.setTarget(false);
+    this.bot.setState("target", false);
   } else if (!this.bot.navmesh.checkVisible(position, this.point)) {
     this.status = GoalStatus.failed;
   }
@@ -879,5 +878,5 @@ SeekToPoint.prototype.process = function() {
  * Clean up.
  */
 SeekToPoint.prototype.terminate = function() {
-  this.bot.setTarget(false);
+  this.bot.setState("target", false);
 };

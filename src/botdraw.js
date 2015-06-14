@@ -12,12 +12,13 @@ var BotDraw = function(bot) {
   this.cost_vector_container.x = 20;
   this.cost_vector_container.y = 20;
   this.draw.addSpriteChild(this.cost_vector_container);
+  this.meshInit();
   this.check();
 };
 module.exports = BotDraw;
 
 BotDraw.prototype.meshInit = function() {
-  if (!this.bot.navmesh) {
+  if (!this.bot.navmesh && !this.bot.navmesh.polys) {
     setTimeout(this.meshInit.bind(this), 50);
     return;
   }
@@ -32,6 +33,7 @@ BotDraw.prototype.update = function() {
   if (this.bot.stopped) {
     this.stopped = true;
     this.draw.hideVector("desired");
+    this.draw.hidePoint("goal");
     this.cost_vector_container.visible = false;
     this.check();
     return;
@@ -39,12 +41,18 @@ BotDraw.prototype.update = function() {
     requestAnimationFrame(this.update.bind(this));
   }
   if (this.bot.desired_vector) this.draw.updateVector("desired", this.bot.desired_vector.mul(10));
-  if (this.bot.goal) this.draw.updatePoint("goal", this.bot.goal);
+  var goal = this.bot.getState("target");
+  if (goal) {
+    this.draw.showPoint("goal");
+    this.draw.updatePoint("goal", goal);
+  } else {
+    this.draw.hidePoint("goal");
+  }
   this.cost_vector_container.clear();
-  if (this.bot.costs) {
+  if (this.bot.steerer.costs) {
     this.cost_vector_container.lineStyle(2, 0xEE0000, 1);
-    var costs = this.bot.costs;
-    var angle = 2 * Math.PI / this.bot.costs[0].length;
+    var costs = this.bot.steerer.costs;
+    var angle = 2 * Math.PI / costs[0].length;
     var cost_vectors = [];
     for (var i = 0; i < costs[0].length; i++) {
       this.cost_vector_container.moveTo(0, 0);
@@ -64,6 +72,7 @@ BotDraw.prototype.update = function() {
   }
 };
 
+// Check if the bot has started and start the animation if so.
 BotDraw.prototype.check = function() {
   if (!this.bot.stopped) {
     this.cost_vector_container.visible = true;
