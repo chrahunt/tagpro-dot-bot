@@ -3,6 +3,7 @@ var Bot = require('./bot');
 var GameState = require('./browserGameState');
 var BotDraw = require('./botdraw');
 var UI = require('./ui');
+var Control = require('./control');
 
 /**
  * The Browser Agent is an implementation of the TagPro agent meant
@@ -32,6 +33,7 @@ waitForDeps(function () {
   var bot = new Bot(state, Logger);
   var botdraw = new BotDraw(bot);
   var ui = new UI(bot);
+  var control = new Control(bot);
 
   // For debugging.
   global.myBot = bot;

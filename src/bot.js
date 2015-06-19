@@ -8,13 +8,6 @@ var Steerer = require('./steerer');
 
 // Alias useful classes.
 var Point = geo.Point;
-var Poly = geo.Poly;
-var PolyUtils = geo.util;
-
-var Stance = {
-  offense: 0,
-  defense: 1
-};
 
 /**
  * The Bot sits at the intersection of modules responsibile for
@@ -24,7 +17,7 @@ var Stance = {
  * @constructor
  * @param {GameState} gamestate - The constructed GameState object,
  *   which provides the bot with information about the game.
- * @param {Logger} [logger] - Optional. An object with a property `log`
+ * @param {Logger} [logger] - Optional. An object with a function `log`
  *   that the bot will use for debug output.
  */
 var Bot = function(gamestate, logger) {
@@ -36,9 +29,10 @@ var Bot = function(gamestate, logger) {
 
   this.game = gamestate;
 
-  this.state = {};
-
-  this.stance = Stance.offense;
+  this.state = {
+    position: "offense",
+    control: "automatic"
+  };
 
   this.initialized = false;
   this.mapInitialized = false;
@@ -58,7 +52,7 @@ Bot.prototype.init = function() {
   if (!this.game.initialized()) { return setTimeout(this.init.bind(this), 250); }
 
 
-  this.game.onMap(this._processMap.bind(this));
+  this.game.onMap(this.processMap.bind(this));
 
   this.brain = new Brain(this);
   this.mover = new Mover(this.game);
@@ -111,7 +105,7 @@ Bot.prototype.initializeParameters = function() {
  * Process map and generate navigation mesh.
  * @private
  */
-Bot.prototype._processMap = function(map) {
+Bot.prototype.processMap = function(map) {
   this.navmesh = new NavMesh(map, this.logger);
 
   // Whether the navigation mesh has been updated.
@@ -144,13 +138,15 @@ Bot.prototype._processMap = function(map) {
 
 /**
  * Update function that drives the rest of the ongoing bot behavior.
+ * @private
  */
 Bot.prototype.update = function() {
-  this.brain.process();
-  this.move();
   // Sense any real-time, big-implication environment actions and
   // send to brain.
-  this._sense();
+  this.sense();
+  this.brain.process();
+  this.move();
+  // Track rate of update call.
   var now = performance.now();
   if (!this.lastUpdate) {
     this.lastUpdate = now;
@@ -161,55 +157,61 @@ Bot.prototype.update = function() {
   }
 };
 
-Bot.prototype.attack = function() {
-  this.stance = Stance.offense;
-};
-
-Bot.prototype.defend = function() {
-  this.stance = Stance.defense;
-};
-
-Bot.prototype.isOffense = function() {
-  return this.stance == Stance.offense;
-};
-
-Bot.prototype.isDefense = function() {
-  return this.stance == Stance.defense;
-};
-
 /**
  * Sense environment changes and send messages to brain if needed.
  * @private
  */
-Bot.prototype._sense = function() {
+Bot.prototype.sense = function() {
   var self = this.game.player();
-  // Newly dead.
-  if (self.dead && !this.sensed.dead) {
-    this.sensed.dead = true;
-    this.brain.handleMessage("dead");
-  }
-  // Newly living.
-  if (this.sensed.dead && !self.dead) {
+  // Dead/alive.
+  if (self.dead) {
+    // Just died.
+    if (!this.sensed.dead) {
+      this.sensed.dead = true;
+      this.brain.handleMessage("dead");
+    }
+  } else if (this.sensed.dead) {
+    // Just respawned.
     this.sensed.dead = false;
     this.brain.handleMessage("alive");
   }
-  if (this.last_stance && this.last_stance !== this.stance) {
-    this.brain.handleMessage("stanceChange");
-  }
-  this.last_stance = this.stance;
+  // Navmesh updated.
   if (this.navUpdate) {
     this.brain.handleMessage("navUpdate");
     this.navUpdate = false;
   }
+  // Defense/Offense position changed.
+  if (this.state.last_position && this.state.last_position !== this.state.position) {
+    this.brain.handleMessage("positionChange");
+  }
+  this.state.last_position = this.state.position;
+  // Manual position changed
+  if (this.state.manual_target && this.state.last_manual_target !== this.state.manual_target) {
+    this.brain.handleMessage("manual_target_changed");
+  }
+  this.state.last_manual_target = this.state.manual_target;
   this.lastSense = Date.now();
 };
 
-// Take actions.
+/**
+ * Get steering and take actions.
+ * @private
+ */
 Bot.prototype.move = function() {
   this.desired_vector = this.steerer.steer(this.state);
   this.mover.move(this.desired_vector);
 };
 
+/**
+ * Set bot state. This function can be called one of two ways
+ * @example <caption>Setting a single value</caption>
+ *   bot.setState("target", new Point(0, 0))
+ * @example <caption>Setting multiple values</caption>
+ *   bot.setState({
+ *     target: new Point(0, 0),
+ *     approach: "arrive"
+ *   })
+ */
 Bot.prototype.setState = function(name, value) {
   if (typeof name == "object") {
     var obj = name;
@@ -221,17 +223,22 @@ Bot.prototype.setState = function(name, value) {
   }
 };
 
+/**
+ * Get bot state identified by `name`. If no value is found, then
+ * undefined is returned.
+ * @param {string} name - The bot state value to return.
+ * @return {*} - The retrieved value.
+ */
 Bot.prototype.getState = function(name) {
   return this.state[name];
 };
 
 /**
- * Stops the bot from thinking and moving.
+ * Stops the bot.
  */
 Bot.prototype.stop = function() {
   this.logger.log("bot", "Stopping bot.");
   this.stopped = true;
-  this.goal = false;
   this.actions.remove("think");
   this.actions.remove("update");
 
@@ -240,6 +247,7 @@ Bot.prototype.stop = function() {
 
   // Stop moving.
   var stopping = setTimeout(function stop() {
+    // Don't continue trying to stop if restarted.
     if (!this.stopped) return;
     var cutoff = 0.01;
     var v = this.game.velocity();

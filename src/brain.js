@@ -18,10 +18,24 @@ var Goal = function(bot) {
   this.status = GoalStatus.inactive;
 };
 
+/**
+ * Called to activate the goal. This is where any necessary state is set.
+ */
 Goal.prototype.activate = function() {};
 
-Goal.prototype.process = function() {};
+/**
+ * Called to continue processing the goal. This can directly change bot
+ * behavior and examine and update its own status and state. Typically
+ * a goal should return its own status so it can be managed properly.
+ */
+Goal.prototype.process = function() {
+  return this.status;
+};
 
+/**
+ * Called to clean up any state that may have been set by the goal
+ * before its execution is terminated.
+ */
 Goal.prototype.terminate = function() {};
 
 /**
@@ -114,7 +128,9 @@ CompositeGoal.prototype.forwardToFirstSubgoal = function(msg) {
 /**
  * Process the subgoals of a composite goal. This removes completed
  * and failed goals from the subgoal list and processes the first
- * subgoal still remaining.
+ * subgoal still remaining, returning its status. If all subgoals have
+ * been completed then the 'completed' status is returned.
+ * @return {GoalStatus}
  */
 CompositeGoal.prototype.processSubgoals = function() {
   // Remove completed and failed subgoals.
@@ -137,12 +153,15 @@ CompositeGoal.prototype.processSubgoals = function() {
 
 /**
  * Add goal to subgoals.
- * @param {Goal} goal - The goal to add.
+ * @param {(Goal|CompositeGoal)} goal - The goal to add.
  */
 CompositeGoal.prototype.addSubgoal = function(goal) {
   this.subgoals.push(goal);
 };
 
+/**
+ * Removes all subgoals from the composite goal, terminating each.
+ */
 CompositeGoal.prototype.removeAllSubgoals = function() {
   var subgoals = this.subgoals.splice(0, this.subgoals.length);
   subgoals.forEach(function(subgoal) {
@@ -225,7 +244,7 @@ Think.prototype.handleMessage = function(msg) {
   } else if (msg == "alive") {
     this.alive = true;
     return true;
-  } else if (msg == "stanceChange") {
+  } else if (msg == "positionChange") {
     this.terminate();
     this.status = GoalStatus.inactive;
     return true;
@@ -238,25 +257,90 @@ Think.prototype.handleMessage = function(msg) {
  * Choose action to take.
  */
 Think.prototype.think = function() {
-  if (this.gameType == this.bot.game.GameTypes.ctf) {
-    // Choose based on manual selection.
-    if (this.bot.isOffense()) {
-      // Make sure we're not already on offense.
-      if (!this.isFirstSubgoal(Offense)) {
-        // Only set to offense for now.
-        // This goal replaces all others.
-        this.removeAllSubgoals();
-        this.addSubgoal(new Offense(this.bot));
+  var control = this.bot.getState("control");
+  if (control == "automatic") {
+    if (this.gameType == this.bot.game.GameTypes.ctf) {
+      var position = this.bot.getState("position");
+      // Choose based on manual selection.
+      if (position == "offense") {
+        // Make sure we're not already on offense.
+        if (!this.isFirstSubgoal(Offense)) {
+          // Only set to offense for now.
+          // This goal replaces all others.
+          this.removeAllSubgoals();
+          this.addSubgoal(new Offense(this.bot));
+        }
+      } else if (position == "defense") {
+        if (!this.isFirstSubgoal(Defense)) {
+          this.removeAllSubgoals();
+          this.addSubgoal(new Defense(this.bot));
+        }
       }
-    } else if (this.bot.isDefense()) {
-      if (!this.isFirstSubgoal(Defense)) {
-        this.removeAllSubgoals();
-        this.addSubgoal(new Defense(this.bot));
-      }
+    } else {
+      // Center flag game.
+      this.bot.chat("I can't play this.");
     }
+  } else if (control == "manual") {
+    // Manual control.
+    if (!this.isFirstSubgoal(ManualControl)) {
+      this.removeAllSubgoals();
+      this.addSubgoal(new ManualControl(this.bot));
+    }
+  }
+};
+
+/**
+ * Handles manual control actions, mostly for debugging.
+ * @param {Bot} bot - The bot.
+ */
+var ManualControl = function(bot) {
+  CompositeGoal.apply(this, arguments);
+};
+
+inherits(ManualControl, CompositeGoal);
+
+/**
+ * Checks for a manual target and navigates to it if needed.
+ */
+ManualControl.prototype.activate = function() {
+  this.status = GoalStatus.active;
+  var target = this.bot.getState("manual_target");
+  if (target) {
+    if (this.isFirstSubgoal(NavigateToPoint)) {
+      if (this.subgoals[0].point.neq(target)) {
+        this.removeAllSubgoals();
+        this.addSubgoal(new NavigateToPoint(this.bot, target));
+      }
+    } else {
+      this.removeAllSubgoals();
+      this.addSubgoal(new NavigateToPoint(this.bot, target));
+    }
+  }
+};
+
+ManualControl.prototype.process = function() {
+  this.activateIfInactive();
+  var status = this.processSubgoals();
+  if (status == GoalStatus.completed) {
+    this.bot.setState("manual_target", null);
+    this.status = GoalStatus.inactive;
+  } else if (status !== GoalStatus.active) {
+    this.activate();
+  }
+  return this.status;
+};
+
+/**
+ * Handles the case where the manual position has changed.
+ * @param {*} message
+ */
+ManualControl.prototype.handleMessage = function(msg) {
+  if (msg == "manual_target_changed") {
+    this.terminate();
+    this.status = GoalStatus.inactive;
+    return true;
   } else {
-    // Center flag game.
-    this.bot.chat("I can't play this.");
+    return this.forwardToFirstSubgoal(msg);
   }
 };
 
@@ -579,6 +663,10 @@ var NavigateToPoint = function(bot, point) {
 
 inherits(NavigateToPoint, CompositeGoal);
 
+/**
+ * Calculates the path from the player to the target point, and
+ * initiates path following.
+ */
 NavigateToPoint.prototype.activate = function() {
   this.status = GoalStatus.active;
   var start = this.bot.game.location();
@@ -592,7 +680,7 @@ NavigateToPoint.prototype.activate = function() {
       this.addSubgoal(new FollowPath(this.bot, path));
     } else {
       // Handle no path being found.
-      // pass back up and retry a specific number of times?
+      this.status = GoalStatus.failed;
     }
   }.bind(this)));
 };
@@ -600,20 +688,25 @@ NavigateToPoint.prototype.activate = function() {
 NavigateToPoint.prototype.process = function() {
   this.activateIfInactive();
   
-  this.status = this.processSubgoals();
+  var status = this.processSubgoals();
+  if (status !== GoalStatus.inactive) {
+    this.status = status;
+  }
 
   return this.status;
 };
 
 /**
- * Handles navUpdate message.
+ * Handles navUpdate message indicating that the navigation mesh has
+ * been updated.
  */
 NavigateToPoint.prototype.handleMessage = function(msg) {
   if (msg == "navUpdate") {
     // Inactivate so we find a different path.
     this.status = GoalStatus.inactive;
-    // todo: incorporate partial path update.
-    // consider button pressing on dynamic obstacles.
+    return true;
+  } else {
+    return this.forwardToFirstSubgoal(msg);
   }
 };
 
@@ -626,6 +719,9 @@ NavigateToPoint.prototype.handleMessage = function(msg) {
 /**
  * This goal calculates a path from the start to the end points and
  * calls the provided callback function after the path is calculated.
+ * The status of this goal is completed if the path is calculated
+ * successful, and failed otherwise. If the path is not calculated
+ * then the callback is not called.
  * @param {Bot} bot - The bot.
  * @param {Point} start - The start location for the path.
  * @param {Point} end - The end location for the path.
@@ -648,10 +744,10 @@ CalculatePath.prototype.activate = function() {
     if (path) {
       this.status = GoalStatus.completed;
       path = this._postProcessPath(path);
+      this.callback(path);
     } else {
       this.status = GoalStatus.failed;
     }
-    this.callback(path);
   }.bind(this));
 };
 
@@ -661,7 +757,7 @@ CalculatePath.prototype.process = function() {
 };
 
 /**
- * Post-process a path to move it away from obstacles.
+ * Post-process a path to move it away from dangerous obstacles.
  * @private
  * @param {Array.<Point>} path - The path to process.
  * @return {Array.<Point>} - The processed path.
@@ -717,23 +813,28 @@ CalculatePath.prototype._postProcessPath = function(path) {
 };
 
 /**
- * This goal 
+ * This goal follows a path of points. If a point along the path cannot
+ * be approached, then the goal fails.
  * @param {Bot} bot - The bot.
  * @param {Array.<Point>} path - The path to follow.
  */
 var FollowPath = function(bot, path) {
   CompositeGoal.apply(this, arguments);
   this.path = path;
-  this.iteration = 0;
   this.reactivate_threshold = 20;
 };
 
 inherits(FollowPath, CompositeGoal);
 
+/**
+ * [activate description]
+ * @return {[type]} [description]
+ */
 FollowPath.prototype.activate = function() {
   this.status = GoalStatus.active;
-  // Get front of path.
-  var destination = this._getNext();
+  this.iteration = 0;
+  // Get furthest visible point along path.
+  var destination = this._getNextPoint();
 
   // try to navigate to front of path.
   if (destination) {
@@ -741,32 +842,51 @@ FollowPath.prototype.activate = function() {
       var subgoal = this.subgoals[0];
       if (subgoal.point && subgoal.point.neq(destination)) {
         this.removeAllSubgoals();
-        this.addSubgoal(new SeekToPoint(this.bot, destination));
+        this.addSubgoal(this._nextSubgoal(destination));
       }
     } else {
-      this.addSubgoal(new SeekToPoint(this.bot, destination));
+      this.addSubgoal(this._nextSubgoal(destination));
     }
-  } else {
+  } else if (destination === null) {
+    // Error getting point.
     this.status = GoalStatus.failed;
+  } else {
+    // No next point, completed.
+    this.status = GoalStatus.completed;
   }
-
-  // If front of path is not visible, set failed. - may need to do
-  // lower in goal hierarchy.
 };
 
+/**
+ * Get the next subgoal for approaching a point.
+ * @private
+ * @param {Point} point - The next destination.
+ * @return {(ArriveToPoint|SeekToPoint)} - The goal corresponding to
+ *   to the approach to the point.
+ */
+FollowPath.prototype._nextSubgoal = function(point) {
+  if (this._isLastPoint(point)) {
+    return new ArriveToPoint(this.bot, point);
+  } else {
+    return new SeekToPoint(this.bot, point);
+  }
+};
+
+/**
+ * Follows the path.
+ * @return {GoalStatus} [description]
+ */
 FollowPath.prototype.process = function() {
-  this.iteration++;
+  this.activateIfInactive();
   if (this.iteration == this.reactivate_threshold) {
     this.status = GoalStatus.inactive;
-    this.iteration = 0;
-  }
-  this.activateIfInactive();
-
-  if (this.status !== GoalStatus.failed) {
-    var status = this.processSubgoals();
-    // Add next point onto path if possible.
-    if (status == GoalStatus.completed && this.path.length !== 2) {
-      this.activate();
+  } else {
+    this.iteration++;
+    if (this.status !== GoalStatus.failed && this.status !== GoalStatus.completed) {
+      var status = this.processSubgoals();
+      // Add next point onto path if possible.
+      if (status == GoalStatus.completed && this.path.length !== 2) {
+        this.activate();
+      }
     }
   }
 
@@ -778,25 +898,26 @@ FollowPath.prototype.process = function() {
  * @private
  * @param {integer} [limit] - If provided, limits the number of
  *   points ahead on the path that will be checked for visibility.
- * @return {Point} - The next point on the path to navigate to.
+ * @return {(Point|boolean|null)} - The next point on the path to navigate
+ *   to, false if there is no next point, or null if there is no path or
+ *   there was some other error.
  */
-FollowPath.prototype._getNext = function(limit) {
+FollowPath.prototype._getNextPoint = function(limit) {
   if (typeof limit == 'undefined') {
     limit = this.path.length;
   } else {
     limit = Math.min(limit, this.path.length);
   }
   if (!this.path)
-    return;
+    return null;
 
-  var goal = false;
+  var goal;
   var path = this.path.slice();
   // Find next location to seek out in path.
   if (path.length > 0) {
     var me = this.bot.game.location();
     var anyVisible = false;
     var last_index = 0;
-    goal = path[0];
 
     // Get point furthest along path that is visible from current
     // location.
@@ -806,12 +927,6 @@ FollowPath.prototype._getNext = function(limit) {
         goal = point;
         last_index = i;
         anyVisible = true;
-      } else {
-        // If we're very near a point, remove it and head towards the
-        // next one.
-        if (me.dist(goal) < 20) {
-          last_index = i;
-        }
       }
     }
 
@@ -819,15 +934,17 @@ FollowPath.prototype._getNext = function(limit) {
       path = path.slice(last_index);
       if (path.length == 1) {
         goal = path[0];
+        // Finished if within this distance of the last point on the
+        // path.
         if (me.dist(goal) < 20) {
           goal = false;
-          this.status = GoalStatus.completed;
         }
       }
     } else {
-      goal = false;
-      this.status = GoalStatus.failed;
+      goal = null;
     }
+  } else {
+    goal = false;
   }
 
   // Update bot state.
@@ -838,23 +955,41 @@ FollowPath.prototype._getNext = function(limit) {
 };
 
 /**
+ * Checks whether this point is the last on the path.
+ * @private
+ * @param {Point} point
+ * @return {Boolean}
+ */
+FollowPath.prototype._isLastPoint = function(point) {
+  return point == this.path[this.path.length - 1];
+};
+
+/**
  * Seek to the given point, which is assumed to be a static point in
- * the line-of-sight of the bot.
+ * the line-of-sight of the bot. The goal fails if the point is not
+ * visible to the bot, and completes if the point is reached.
  * @param {Bot} bot
  * @param {Point} point - The point to navigate to.
  */
 var SeekToPoint = function(bot, point) {
-  CompositeGoal.apply(this, arguments);
+  Goal.apply(this, arguments);
   this.point = point;
 };
 
 inherits(SeekToPoint, Goal);
 
+/**
+ * Sets the point associated with this goal to the target for the bot.
+ */
 SeekToPoint.prototype.activate = function() {
   this.status = GoalStatus.active;
 
   // Set bot steering target.
-  this.bot.setState("target", this.point);
+  this.bot.setState("target", {
+    loc: this.point,
+    type: "static",
+    movement: "seek"
+  });
 };
 
 SeekToPoint.prototype.process = function() {
@@ -878,5 +1013,53 @@ SeekToPoint.prototype.process = function() {
  * Clean up.
  */
 SeekToPoint.prototype.terminate = function() {
+  this.bot.setState("target", false);
+};
+
+/**
+ * Seek to the given point, which is assumed to be a static point in
+ * the line-of-sight of the bot.
+ * @param {Bot} bot
+ * @param {Point} point - The point to navigate to.
+ */
+var ArriveToPoint = function(bot, point) {
+  Goal.apply(this, arguments);
+  this.point = point;
+};
+
+inherits(ArriveToPoint, Goal);
+
+ArriveToPoint.prototype.activate = function() {
+  this.status = GoalStatus.active;
+
+  // Set bot steering target.
+  this.bot.setState("target", {
+    loc: this.point,
+    type: "static",
+    movement: "arrive"
+  });
+};
+
+ArriveToPoint.prototype.process = function() {
+  this.activateIfInactive();
+
+  // Check for death. - may need to be done higher up.
+  var position = this.bot.game.location();
+  // Check for point visibility.
+  // Check if at position.
+  if (position.dist(this.point) < 20) {
+    this.status = GoalStatus.completed;
+    this.bot.setState("target", false);
+  } else if (!this.bot.navmesh.checkVisible(position, this.point)) {
+    this.status = GoalStatus.failed;
+  }
+
+  return this.status;
+};
+
+/**
+ * Clean up.
+ */
+ArriveToPoint.prototype.terminate = function() {
   this.bot.setState("target", false);
 };

@@ -13,6 +13,7 @@ var UI = function(bot) {
   $.get(baseUrl + "ui.html", function(data) {
     $('body').append(data);
     this.init();
+    this.initCameraMovement();
   }.bind(this));
 };
 
@@ -33,6 +34,24 @@ UI.prototype.init = function() {
       $(this).text("Start Bot");
     }
   });
+  $('#stage-toggle').click(function(e) {
+    tagpro.renderer.stage.visible = !tagpro.renderer.stage.visible;
+    $(this).text("Turn " + (tagpro.renderer.stage.visible ? "off" : "on") + " stage");
+  });
+  $('#bot-offense').click(function(e) {
+    self.bot.setState("position", "offense");
+  });
+  $('#bot-defense').click(function(e) {
+    self.bot.setState("position", "defense");
+  });
+  $('input:radio[name=bot-control]').click(function() {
+    self.bot.setState("control", $(this).val());
+  });
+  
+  // Initialize control type input state.
+  var controlType = this.bot.getState("control");
+  $('input:radio[name=bot-control][value='+controlType+']').prop('checked', true);
+
 
   function parseParameters() {
     // Helper function.
@@ -121,4 +140,83 @@ UI.prototype.init = function() {
     parseParameters();
     parseInfo();
   }.bind(this), 20);
+};
+
+UI.prototype.initCameraMovement = function() {
+  var self = this;
+  this.camReleased = false;
+  var initialSpectator = tagpro.spectator;
+  var moving = {
+    "x": 0,
+    "y": 0
+  };
+  var direction = {
+    "up": -1,
+    "down": 1,
+    "left": -1,
+    "right": 1
+  };
+  var axis = {
+    "up": "y",
+    "down": "y",
+    "left": "x",
+    "right": "x"
+  };
+  var moveAmount = 20;
+  $('#camera-toggle').click(function() {
+    if (self.camReleased) {
+      self.camReleased = false;
+      // Make camera normal.
+      $('#camera-toggle').text("Release Camera");
+      tagpro.viewport.followPlayer = true;
+      tagpro.spectator = initialSpectator;
+      for (var dir in moving) {
+        moving[dir] = 0;
+      }
+    } else {
+      self.camReleased = true;
+      // Make camera movable.
+      $('#camera-toggle').text("Follow Player");
+      tagpro.viewport.followPlayer = false;
+      tagpro.spectator = true;
+    }
+  });
+  var keys = {
+    73: "up", // i
+    74: "left", // j
+    75: "down", // k
+    76: "right", // l
+    85: "in", // u
+    79: "out" // o
+  };
+  $(document).keydown(function (key) {
+    console.log(key);
+    var code = key.which;
+    if (keys.hasOwnProperty(code) && self.camReleased) {
+      console.log("present.");
+      // Zooming.
+      if (keys[code] == "in") {
+        tagpro.zooming = 0.025;
+      } else if (keys[code] == "out") {
+        tagpro.zooming = -0.025;
+      }/* else {
+        var dir = keys[code];
+        moving[dir] = direction[dir] * moveAmount;
+      }*/
+    }
+    shift = key.shiftKey;
+    ctrl = key.ctrlKey;
+    if(key.which>=37 && key.which<=40) {
+      adds[key.which-37] = 1;
+      tagpro.viewport.followPlayer = false;
+    }
+  });
+  $(document).keyup(function (key) {
+    var code = key.which;
+    if (keys.hasOwnProperty(code) && self.camReleased) {
+      if (keys[code] == "in" || keys[code] == "out") {
+        tagpro.zooming = 0;
+      }
+    }
+  });
 };

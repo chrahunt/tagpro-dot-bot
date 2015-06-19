@@ -14,7 +14,7 @@ var GameState = function(tagpro) {
   this.parameters.game = {
     step: 1e3 / 60, // Physics step size in ms.
     radius: {
-      spike: 14,
+      spike: 15,
       ball: 19
     }
   };

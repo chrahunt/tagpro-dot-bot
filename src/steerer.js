@@ -16,7 +16,7 @@ var Steerer = function(state) {
     // argument
   };
   this.parameters.avoid = {
-    max_see_ahead: 200, // Time in ms to look ahead for a collision.
+    max_see_ahead: 300, // Time in ms to look ahead for a collision.
     assumed_difference: 35,
     spike_intersection_radius: this.gamestate.parameters.game.radius.spike +
       this.gamestate.parameters.game.radius.ball
@@ -34,6 +34,7 @@ Steerer.prototype.steer = function(state) {
 };
 
 /**
+ * @private
  * @param {number} n - The number of vectors to consider.
  */
 Steerer.prototype._steering = function(n) {
@@ -47,8 +48,8 @@ Steerer.prototype._steering = function(n) {
 
   // Calculate costs.
   var costs = [];
-  costs.push(this._inv_Avoid(vectors));
-  costs.push(this._inv_Seek(vectors));
+  costs.push(this.staticAvoid(vectors));
+  costs.push(this.seek(vectors));
   this.costs = costs;
 
   // Do selection.
@@ -74,12 +75,23 @@ Steerer.prototype._steering = function(n) {
   };
 
   var idx = heuristic(costs);
-  return vectors[idx];
+  var selected = vectors[idx];
+  if (this.botstate.target.movement == "arrive") {
+    var distance = this.botstate.target.loc.dist(this.gamestate.location());
+    // TODO: Scale vector with distance to target.
+    var scaled = vectors[idx].mul(distance / 80);
+    return clampVector(scaled, -2.5, 2.5);
+  } else {
+    return clampVector(vectors[idx].mul(2), -2.5, 2.5);
+  }
 };
 
-// Takes in vectors, associates cost with each.
-// Returns vector of costs.
-Steerer.prototype._inv_Avoid = function(vectors) {
+/**
+ * Avoid static obstacles.
+ * @private
+ * @param {Array.<Point>} vectors - The directions to consider.
+ */
+Steerer.prototype.staticAvoid = function(vectors) {
   var costs = zeroArray(vectors.length);
   var params = this.parameters.avoid;
 
@@ -120,12 +132,16 @@ Steerer.prototype._inv_Avoid = function(vectors) {
         SPIKE_INTERSECTION_RADIUS
       );
       if (collision.collides) {
+        costs[i] += 50;
+        /*
         if (collision.inside) {
           costs[i] += 100;
         } else {
           // Calculate cost.
-          costs[i] += SPIKE_INTERSECTION_RADIUS / position.dist(collision.point);
-        }
+          costs[i] += clamp(SPIKE_INTERSECTION_RADIUS / ahead.dist(collision.point), 0, 100);
+        }*/
+      } else {
+
       }
     }
   });
@@ -140,18 +156,17 @@ Steerer.prototype._inv_Avoid = function(vectors) {
 };
 
 /**
- * Takes an array of unit vectors and assigns a penalty to each
- * depending on how much they do not align.
- * @param {[type]} vectors [description]
- * @return {[type]} [description]
+ * Seek to a point.
+ * @param {Array.<Point>} vectors
+ * @return {Array.<number>} - The costs associated with each direction.
  */
-Steerer.prototype._inv_Seek = function(vectors) {
+Steerer.prototype.seek = function(vectors) {
   var costs = zeroArray(vectors.length);
 
   if (this.botstate.target) {
     var params = this.parameters.seek;
     var p = this.gamestate.location();
-    var goal = this.botstate.target.sub(p).normalize();
+    var goal = this.botstate.target.loc.sub(p).normalize();
     
     vectors.forEach(function(vector, i) {
       var val = vector.dot(goal);
@@ -169,20 +184,49 @@ Steerer.prototype._inv_Seek = function(vectors) {
 };
 
 /**
- * Scale a vector so that one of the components is maximized.
+ * Scale a vector in accordance with the approach behavior.
+ * @param {Point} vector - The selected vector to scale.
+ * @return {Point} - The scaled vector.
+ */
+Steerer.prototype.arrive = function(vector) {
+  var p = this.gamestate.location();
+  var dist = this.botstate.target.loc.dist(p);
+  return vector.mul();
+};
+
+/**
+ * Clamps a vector so that both coordinates are constrained by the
+ * provided min and max, and their values are the same relative to one
+ * another.
  * @param {Point} vec - The vector to scale.
- * @param {number} max - The maximum (absolute) value of either component.
+ * @param {number} min - The minimum value of either component.
+ * @param {number} max - The maximum value of either component.
  * @return {Point} - The converted vector.
  */
-function scaleVector(vec, max) {
+function clampVector(vec, min, max) {
   var ratio = 0;
-  if (Math.abs(vec.x) >= Math.abs(vec.y) && vec.x !== 0) {
-    ratio = Math.abs(max / vec.x);
-  } else if (vec.y !== 0) {
+  if (vec.x >= min && vec.y >= min && vec.x <= max && vec.y <= max) {
+    return vec;
+  } else if (Math.abs(vec.x) >= Math.abs(vec.y)) {
+    if (vec.x !== 0) {
+      ratio = Math.abs(max / vec.x);
+    }
+  } else {
     ratio = Math.abs(max / vec.y);
   }
   var scaled = vec.mul(ratio);
   return scaled;
+}
+
+/**
+ * If vector has a component outside of the normal velocity range,
+ * scale both components so their ratio is preserved but the maximum
+ * is the top speed of the player.
+ * @param {Point} vec - The vector to scale.
+ * @return {Point} - The scaled vector.
+ */
+function scaleVector(vec) {
+
 }
 
 function clamp(val, min, max) {
