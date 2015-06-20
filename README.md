@@ -11,3 +11,18 @@ After downloading, to run:
 6. Click the script loader browser action (should look like a chrome icon) and put the URL of the built file (by default this should be `http://localhost:8080/build/browserBot.js`) into the popup, save, and ensure the 'extension active' checkbox is checked.
 
 The script loader only runs on maptest, tangent, and newcompte's servers, so you should be ok on that front.
+
+## Organization
+
+Steerer module handles the real-time movement actions given by the brain.
+
+Communication is done through the bot state.
+`target` is the steering information object.
+has properties:
+* `loc` - optional, required for static type
+* `id` - optional, required for dynamic type.
+* `type` -  one of "static" or "dynamic"
+* `movement` - type of approach, one of "seek", "arrive", "align"
+* `velocity` - optional, required for align movement.
+
+

@@ -1,6 +1,6 @@
 var NavMesh = require('tagpro-navmesh');
 
-var Brain = require('./brain');
+var Brain = require('./behavior/brain');
 var geo = require('./geometry');
 var ActionManager = require('./actionmanager');
 var Mover = require('./mover');
@@ -51,12 +51,12 @@ Bot.prototype.init = function() {
   // Ensure that the tagpro global object has initialized and allocated us an id.
   if (!this.game.initialized()) { return setTimeout(this.init.bind(this), 250); }
 
-
   this.game.onMap(this.processMap.bind(this));
 
   this.brain = new Brain(this);
   this.mover = new Mover(this.game);
   this.steerer = new Steerer(this.game);
+  this.sense_queue = [];
 
   // Sensed keeps track of sensed states.
   this.sensed = {
@@ -70,6 +70,9 @@ Bot.prototype.init = function() {
   this.info = {
     updates: 50 // Updates/second default value
   };
+  this.game.addPlayerListener("boost", function (info) {
+    this.sense_queue.push("boost");
+  }.bind(this));
   this.initialized = true;
   this.logger.log("bot", "Bot loaded."); // DEBUG
 };
@@ -190,6 +193,10 @@ Bot.prototype.sense = function() {
     this.brain.handleMessage("manual_target_changed");
   }
   this.state.last_manual_target = this.state.manual_target;
+  while (this.sense_queue.length > 0) {
+    var event = this.sense_queue.shift();
+    this.brain.handleMessage(event);
+  }
   this.lastSense = Date.now();
 };
 

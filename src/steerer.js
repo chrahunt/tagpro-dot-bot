@@ -21,13 +21,28 @@ var Steerer = function(state) {
     spike_intersection_radius: this.gamestate.parameters.game.radius.spike +
       this.gamestate.parameters.game.radius.ball
   };
+  this.parameters.align = {
+    num_points_prior: 3,
+    backwards_multiplier: 20,
+    forward_multiplier: 20
+  };
 };
 module.exports = Steerer;
 
+/**
+ * External function called with bot state.
+ * @param {BotState} state - The state of the bot, includes information
+ *   passed from brain.
+ * @return {Point} - Desired vector.
+ */
 Steerer.prototype.steer = function(state) {
   this.botstate = state;
   if (this.botstate.target) {
-    return this._steering(32).mul(2);
+    if (this.botstate.target.movement == "align") {
+      return this.align();
+    } else {
+      return this.inverseSteering(32);
+    }
   } else {
     return new Point(0, 0);
   }
@@ -37,7 +52,7 @@ Steerer.prototype.steer = function(state) {
  * @private
  * @param {number} n - The number of vectors to consider.
  */
-Steerer.prototype._steering = function(n) {
+Steerer.prototype.inverseSteering = function(n) {
   if (typeof n == 'undefined') n = 8;
   // Generate vectors.
   var angle = 2 * Math.PI / n;
@@ -48,8 +63,8 @@ Steerer.prototype._steering = function(n) {
 
   // Calculate costs.
   var costs = [];
-  costs.push(this.staticAvoid(vectors));
-  costs.push(this.seek(vectors));
+  costs.push(this.inverseStaticAvoid(vectors));
+  costs.push(this.inverseSeek(vectors));
   this.costs = costs;
 
   // Do selection.
@@ -91,7 +106,7 @@ Steerer.prototype._steering = function(n) {
  * @private
  * @param {Array.<Point>} vectors - The directions to consider.
  */
-Steerer.prototype.staticAvoid = function(vectors) {
+Steerer.prototype.inverseStaticAvoid = function(vectors) {
   var costs = zeroArray(vectors.length);
   var params = this.parameters.avoid;
 
@@ -160,7 +175,7 @@ Steerer.prototype.staticAvoid = function(vectors) {
  * @param {Array.<Point>} vectors
  * @return {Array.<number>} - The costs associated with each direction.
  */
-Steerer.prototype.seek = function(vectors) {
+Steerer.prototype.inverseSeek = function(vectors) {
   var costs = zeroArray(vectors.length);
 
   if (this.botstate.target) {
@@ -184,14 +199,51 @@ Steerer.prototype.seek = function(vectors) {
 };
 
 /**
- * Scale a vector in accordance with the approach behavior.
- * @param {Point} vector - The selected vector to scale.
- * @return {Point} - The scaled vector.
+ * Aligns with a point/velocity combination.
+ * @return {Point} - The desired velocity.
  */
-Steerer.prototype.arrive = function(vector) {
-  var p = this.gamestate.location();
-  var dist = this.botstate.target.loc.dist(p);
-  return vector.mul();
+Steerer.prototype.align = function() {
+  var target = this.botstate.target;
+  var steering = this.botstate.steering;
+  var loc = this.gamestate.location();
+  var v = this.gamestate.velocity();
+  var params = this.parameters.align;
+  if (!steering ||
+    (target.loc !== steering.p || target.velocity !== steering.v)) {
+    steering = this.botstate.steering = {
+      p: target.loc,
+      v: target.velocity,
+      points: []
+    };
+    var numPoints = params.num_points_prior;
+    var b_multiplier = params.backwards_multiplier;
+    var f_multiplier = params.forward_multiplier;
+    var p = steering.p;
+    var inv_v = steering.v.mul(-1); // backwards vector.
+    for (var i = 0; i < numPoints; i++) {
+      steering.points.push(p.add(inv_v.mul(numPoints - i).mul(b_multiplier)));
+    }
+    steering.points.push(p.add(steering.v));
+  } else {
+    var target_p = target.loc;
+    // Keep points ahead of the player.
+    steering.points = steering.points.filter(function (p) {
+      var this_target = target_p.sub(p);
+      var this_loc = loc.sub(p);
+      return this_loc.dot(this_target) < 0;
+    });
+  }
+  return this.seek(steering.points[0]);
+};
+
+/**
+ * Seek a specific location, normal vector steering behavior approach.
+ * @param {Point} loc - The location to seek
+ * @return {Point} - The desired vector.
+ */
+Steerer.prototype.seek = function(loc) {
+  var location = this.gamestate.location();
+  return clampVector(loc.sub(location), -2.5, 2.5);
 };
 
 /**

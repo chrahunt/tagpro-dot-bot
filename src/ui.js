@@ -1,3 +1,5 @@
+var geo = require('./geometry');
+var Point = geo.Point;
 // Initialize the user interface
 // Set up the UI for toggle-able parameter values
 // Add normal controls.
@@ -33,6 +35,16 @@ UI.prototype.init = function() {
       self.bot.stop();
       $(this).text("Start Bot");
     }
+  });
+  $("#do-boost").click(function (e) {
+    // Manual boost info for mid-left boost on boombox.
+    var info = {
+      array_loc: {x: 17, y: 21},
+      keys: {right: true},
+      v: new Point(1.2928, -0.3072),
+      incoming: new Point(667.5558, 862.8337)
+    };
+    self.bot.setState("boost_test", info);
   });
   $('#stage-toggle').click(function(e) {
     tagpro.renderer.stage.visible = !tagpro.renderer.stage.visible;
@@ -190,10 +202,8 @@ UI.prototype.initCameraMovement = function() {
     79: "out" // o
   };
   $(document).keydown(function (key) {
-    console.log(key);
     var code = key.which;
     if (keys.hasOwnProperty(code) && self.camReleased) {
-      console.log("present.");
       // Zooming.
       if (keys[code] == "in") {
         tagpro.zooming = 0.025;

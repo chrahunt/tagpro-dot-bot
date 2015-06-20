@@ -33,7 +33,58 @@ GameState.prototype.init = function() {
   this.self = this.player();
   this.socket = this.tagpro.socket;
   this.optimizations();
+  this.initEventListener();
   this._initialized = true;
+};
+
+/**
+ * Initialize event listeners that get sent to the bot.
+ */
+GameState.prototype.initEventListener = function() {
+  this.listeners = {
+    boost: {}
+  };
+  var self = this;
+  this.socket.on('p', function (updates) {
+    updates = updates.u || updates;
+    updates.forEach(function (update) {
+      var id = update.id;
+      if (!update.hasOwnProperty('lx') || !update.hasOwnProperty('ly')) return;
+      // boost velocity magnitude is 7.44 by default or 7.41 with pressing in 
+      // the opposite direction
+      if (Math.abs(update.lx) >= 7.41 || Math.abs(update.ly) >= 7.41) {
+        if (self.listeners.boost && self.listeners.boost[id]) {
+          self.listeners.boost[id].forEach(function (fn) {
+            fn("boost");
+          });
+        }
+      }
+    });
+  });
+};
+
+/**
+ * Add a listener for a player event.
+ * @param {integer} [id]- The id of the player to listen for an event
+ *   for. If not provided then it defaults to the id of the current
+ *   player.
+ * @param {string} name - The name of the event to listen for.
+ * @param {Function} callback - The function that receives notification
+ *   of the event that occurred.
+ */
+GameState.prototype.addPlayerListener = function(id, name, callback) {
+  if (typeof callback == "undefined") {
+    callback = name;
+    name = id;
+    id = tagpro.playerId;
+  }
+  if (!this.listeners.hasOwnProperty(name)) {
+    this.listeners[name] = {};
+  }
+  if (!this.listeners[name].hasOwnProperty(id)) {
+    this.listeners[name][id] = [];
+  }
+  this.listeners[name][id].push(callback);
 };
 
 /**
