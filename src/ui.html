@@ -1,6 +1,12 @@
 <div id="bot-ui">
+  <div id="bot-ui-header">
+    <!-- exit -->
+    <a id="bot-exit"><i class="material-icons">close</i></a>
+    <!-- toggle -->
+    <a id="sidebar-toggle"><i class="material-icons">chevron_left</i></a>
+  </div>
   <div id="bot-controls" class="bot-ui-panel">
-    <div class="bot-ui-header">Bot Controls</div>
+    <div class="bot-ui-panel-header">Bot Controls</div>
     <div class="bot-ui-content">
       <div class="form-group">
         <button id="bot-power">Start Bot</button>
@@ -9,7 +15,7 @@
     </div>
   </div>
   <div id="bot-state" class="bot-ui-panel">
-    <div class="bot-ui-header">Bot State</div>
+    <div class="bot-ui-panel-header">Bot State</div>
     <div class="bot-ui-content">
       <div class="form-group">
         <label>Control</label>
@@ -24,7 +30,7 @@
     </div>
   </div>
   <div id="other-controls" class="bot-ui-panel">
-    <div class="bot-ui-header">Other Controls</div>
+    <div class="bot-ui-panel-header">Other Controls</div>
     <div class="bot-ui-content">
       <div class="form-group">
         <label>Settings</label>
@@ -34,81 +40,126 @@
     </div>
   </div>
   <div id="bot-values" class="bot-ui-panel">
-    <div class="bot-ui-header">Values</div>
+    <div class="bot-ui-panel-header">Values</div>
     <div class="bot-ui-content"></div>
   </div>
   <div id="bot-parameters" class="bot-ui-panel">
-    <div class="bot-ui-header">Bot Parameters</div>
+    <div class="bot-ui-panel-header">Bot Parameters</div>
     <div class="bot-ui-content"></div>
   </div>
-</div>
+  <link href="//fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link href="//fonts.googleapis.com/css?family=Roboto+Mono:400,500,700" rel="stylesheet" type="text/css">
+  <link href="//fonts.googleapis.com/css?family=Roboto:400,500,700,400italic" rel="stylesheet" type="text/css">
+  <style>
+  /* sidebar */
+  #bot-ui {
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    overflow-y: scroll;
+    height: 100%;
+    font-family: 'RobotoDraft', 'Roboto';
+  }
 
-<style>
-.bot-ui-panel {
-    margin-bottom: 10px;
-}
+  #bot-ui-header {
+      height: 35px;
+  }
 
-.bot-ui-header {
-    padding: 5px;
-    font-weight: bold;
-    border: 1px solid #aaa;
-    border-radius: 5px 5px 0px 0px;
-}
+  #bot-exit {
+      background-color: #fff;
+      height: 100%;
+      width: 40px;
+      display: inline-block;
+      text-align: center;
+  }
 
-.bot-ui-content {
-    padding: 5px;
-    border: 1px solid #aaa;
-    border-top: none;
-    background-color: #BFB8B8;
-}
+  #bot-exit i {
+      height: 35px;
+      line-height: 35px;
+  }
 
-.param-section {
-    margin-bottom: 5px;
-    padding-left: 5px;
-    border-left: 1px solid black;
-}
+  .bot-ui-panel-header {
+      padding: 5px;
+      font-weight: bold;
+      font-family: 'Roboto';
+      border: 1px solid #aaa;
+  }
 
-.section-header {
-    font-weight: bold;
-    margin-bottom: 3px;
-}
+  .bot-ui-content {
+      padding: 5px;
+      border: 1px solid #aaa;
+      border-top: none;
+      background-color: #BFB8B8;
+  }
 
-.param-control input {
+  .param-section {
+      margin-bottom: 5px;
+      padding-left: 5px;
+      border-left: 1px solid black;
+  }
+
+  .section-header {
+      font-weight: bold;
+      margin-bottom: 3px;
+  }
+
+  .param-control input {
+      float: right;
+      width: 40px;
+  }
+
+  .param-control {
+      height: 25px;
+  }
+
+  .param-section:last-child {
+      margin-bottom: 0px;
+  }
+
+  .form-group {
+    display: block;
+    margin-bottom: 15px;
+    overflow: auto;
+  }
+
+  .form-group > label {
+    float: left;
+    margin-right: 20px;
+  }
+
+  .form-group > button {
     float: right;
-    width: 40px;
-}
+    margin-left: 10px;
+    padding: 5px;
+  }
 
-.param-control {
-    height: 25px;
-}
+  // Rules for sizing the icon.
+  .material-icons.md-18 { font-size: 18px; }
+  .material-icons.md-24 { font-size: 24px; }
+  .material-icons.md-36 { font-size: 36px; }
+  .material-icons.md-48 { font-size: 48px; }
 
-.param-section:last-child {
-    margin-bottom: 0px;
-}
+  // Rules for using icons as black on a light background.
+  .material-icons.md-dark { color: rgba(0, 0, 0, 0.54); }
+  .material-icons.md-dark.md-inactive { color: rgba(0, 0, 0, 0.26); }
 
-#bot-ui {
-  position: absolute;
-  top: 45px;
-  left: 25px;
-  overflow-y: scroll;
-  height: 90%;
-  padding-right: 5px;
-}
+  // Rules for using icons as white on a dark background.
+  .material-icons.md-light { color: rgba(255, 255, 255, 1); }
+  .material-icons.md-light.md-inactive { color: rgba(255, 255, 255, 0.3); }
 
-.form-group {
-  display: block;
-  margin-bottom: 15px;
-  overflow: auto;
-}
+  /* new main container */
+  #main-container {
+    position: absolute;
+    top: 0px;
+    right: 0px;
+  }
 
-.form-group > label {
-  float: left;
-  margin-right: 20px;
-}
-
-.form-group > button {
-  float: right;
-  margin-left: 10px;
-  padding: 5px;
-}
-</style>
+  #contents {
+    width: 100%;
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    height: 100%;
+  }
+  </style>
+</div>

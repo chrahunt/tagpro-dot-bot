@@ -26,6 +26,23 @@ module.exports = UI;
  */
 UI.prototype.init = function() {
   var self = this;
+  // Reorganize page.
+  var newDiv = $("<div/>", {
+    id: "main-container"
+  });
+  var contents = $("body").children().not("#bot-ui");
+  newDiv.appendTo("body");
+  contents.detach().appendTo("#main-container");
+  var contentDiv = $("<div/>", {
+    id: "contents"
+  });
+  contentDiv.appendTo("body");
+  $("#bot-ui").detach().appendTo(contentDiv);
+  $("#main-container").detach().appendTo(contentDiv);
+  // Change resize behavior.
+  $(window).off("resize", tagpro.renderer.resizeAndCenterView);
+  $(window).resize(this.resizeAndCenterView);
+  this.resizeAndCenterView();
   // Button listeners.
   $('#bot-power').click(function (e) {
     if (self.bot.stopped) {
@@ -59,11 +76,15 @@ UI.prototype.init = function() {
   $('input:radio[name=bot-control]').click(function() {
     self.bot.setState("control", $(this).val());
   });
-  
+
+  // Overwrite exit link.
+  var link = $("#exit").attr("href");
+  $("#exit").remove();
+  $("#bot-exit").attr("href", link);
+
   // Initialize control type input state.
   var controlType = this.bot.getState("control");
   $('input:radio[name=bot-control][value='+controlType+']').prop('checked', true);
-
 
   function parseParameters() {
     // Helper function.
@@ -229,4 +250,66 @@ UI.prototype.initCameraMovement = function() {
       }
     }
   });
+};
+
+UI.prototype.resizeAndCenterView = function() {
+  // Resize.
+  var tr = tagpro.renderer,
+      main = $("#main-container"),
+      sidebar = $("#bot-ui"),
+      container = $("#contents"),
+      width = container.outerWidth() - sidebar.outerWidth(),
+      height = container.outerHeight(),
+      adjustedWidth,
+      adjustedHeight;
+  main.css({
+    width: width + 'px',
+    height: height
+  });
+  if (width > tr.canvas_width) {
+    width = tr.canvas_width;
+  }
+  if (height > tr.canvas_height) {
+    height = tr.canvas_height;
+  }
+
+  adjustedHeight = Math.round((width * tr.canvas_height) / tr.canvas_width);
+  adjustedWidth = 0;
+
+  if (adjustedHeight > height) {
+    adjustedWidth = Math.round(((height * tr.canvas_width) / tr.canvas_height));
+    adjustedHeight = height;
+  } else {
+    adjustedWidth = width;
+  }
+
+  tr.renderer.resize(adjustedWidth, adjustedHeight);
+
+  // Center.
+  var viewport = $('#viewport'),
+      viewportDiv = $('#viewportDiv'),
+      options = $("#options");
+
+  viewport.css({
+    position: 'absolute',
+    left: (width - viewport.outerWidth()) / 2,
+    top: (height - viewport.outerHeight()) / 2
+  });
+  viewportDiv.css({
+    position: 'absolute',
+    width: viewport.outerWidth(),
+    height: viewport.outerHeight(),
+    left: (width - viewport.outerWidth()) / 2,
+    top: (height - viewport.outerHeight()) / 2
+  });
+  options.css({
+    position: 'absolute',
+    left: (width - options.width()) / 2,
+    top: (height - options.height()) / 2
+  });
+
+  tagpro.ui.resize(viewport.width(), viewport.height());
+  tr.vpWidth = viewport.width();
+  tr.vpHeight = viewport.height();
+  tagpro.chat.resize();
 };

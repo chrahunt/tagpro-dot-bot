@@ -26,9 +26,10 @@ Control.prototype.init = function() {
       var scale = tagpro.renderer.gameContainer.scale.x;
       // See map offset in canvas.
       var offset = new Point(tagpro.renderer.gameContainer.x, tagpro.renderer.gameContainer.y).div(scale);
+      var elt_offset = $(viewport).offset();
       // Get click location on canvas.
-      var click = new Point(event.x - (window.innerWidth - viewport.width) / 2,
-        event.y - (window.innerHeight - viewport.height) / 2).div(scale);
+      var click = new Point(event.x - elt_offset.left,
+        event.y - elt_offset.top).div(scale);
       bot.setState("manual_target", click.sub(offset));
     }, false);
   });
