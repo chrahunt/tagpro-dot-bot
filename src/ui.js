@@ -42,7 +42,7 @@ UI.prototype.init = function() {
   // Change resize behavior.
   $(window).off("resize", tagpro.renderer.resizeAndCenterView);
   $(window).resize(this.resizeAndCenterView);
-  this.resizeAndCenterView();
+  
   // Button listeners.
   $('#bot-power').click(function (e) {
     if (self.bot.stopped) {
@@ -172,6 +172,9 @@ UI.prototype.init = function() {
     }
     parseParameters();
     parseInfo();
+    setTimeout(function () {
+      this.resizeAndCenterView();
+    }.bind(this), 100);
   }.bind(this), 20);
 };
 
