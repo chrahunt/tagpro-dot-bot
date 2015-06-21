@@ -42,6 +42,22 @@ Offense.prototype.process = function() {
 
   if (status == GoalStatus.completed) {
     this.activate();
+  } else {
+    this.status = status;
   }
   return this.status;
+};
+
+/**
+ * Handle own grab and 
+ * @param {string} msg - The message
+ * @return {[type]} [description]
+ */
+Offense.prototype.handleMessage = function(msg) {
+  if (msg == "grab" || msg == "cap") {
+    this.status = GoalStatus.inactive;
+    return true;
+  } else {
+    return this.forwardToFirstSubgoal(msg);
+  }
 };

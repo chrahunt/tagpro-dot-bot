@@ -63,25 +63,34 @@ BotDraw.prototype.update = function() {
   }
   // Cost vectors for steering.
   this.cost_vector_container.clear();
-  if (this.bot.steerer.costs) {
-    this.cost_vector_container.lineStyle(2, 0xEE0000, 1);
-    var costs = this.bot.steerer.costs;
-    var angle = 2 * Math.PI / costs[0].length;
-    var cost_vectors = [];
-    for (var i = 0; i < costs[0].length; i++) {
-      this.cost_vector_container.moveTo(0, 0);
-      var cost = costs[0][i];
+  var self = this;
+  function drawCosts(costs, color) {
+    self.cost_vector_container.lineStyle(2, color, 1);
+    var angle = 2 * Math.PI / costs.length;
+    for (var i = 0; i < costs.length; i++) {
+      self.cost_vector_container.moveTo(0, 0);
+      var cost = costs[i];
       var x = Math.cos(angle * i) * cost;
       var y = Math.sin(angle * i) * cost;
-      this.cost_vector_container.lineTo(x, y);
+      self.cost_vector_container.lineTo(x, y);
     }
-    this.cost_vector_container.lineStyle(2, 0x0000EE, 1);
-    for (i = 0; i < costs[1].length; i++) {
-      this.cost_vector_container.moveTo(0, 0);
-      var cost = costs[1][i];
-      var x = Math.cos(angle * i) * cost;
-      var y = Math.sin(angle * i) * cost;
-      this.cost_vector_container.lineTo(x, y);
+  }
+  if (this.bot.steerer.costs) {
+    var colors = {
+      static_avoid: 0xEE0000,
+      seek: 0x0000EE,
+      dynamic_avoid: 0xEEEE00
+    };
+    var costs = this.bot.steerer.costs;
+    if (costs.length == 2) {
+      // No dynamic obstacle avoidance.
+      drawCosts(costs[0], colors.static_avoid);
+      drawCosts(costs[1], colors.seek);
+    } else {
+      // Includes dynamic obstacle avoidance.
+      drawCosts(costs[0], colors.static_avoid);
+      drawCosts(costs[1], colors.dynamic_avoid);
+      drawCosts(costs[2], colors.seek);
     }
   }
 };

@@ -54,6 +54,7 @@ Brain.prototype.handleMessage = function(msg) {
   if (msg == "dead") {
     this.terminate();
     this.status = GoalStatus.inactive;
+    this.bot.setState("dangerous_enemies", false); // dead have no enemies
     this.alive = false;
     return true;
   } else if (msg == "alive") {
@@ -64,6 +65,17 @@ Brain.prototype.handleMessage = function(msg) {
     this.status = GoalStatus.inactive;
     return true;
   } else {
+    // Handle messages that impact steering obstacles, but still forward
+    // to first subgoal.
+    if (msg == "grab") {
+      // Everyone on the other team is an enemy.
+      var enemies = this.bot.game.enemies().map(function (player) {
+        return player.id;
+      });
+      this.bot.setState("dangerous_enemies", enemies);
+    } else if (msg == "cap") {
+      this.bot.setState("dangerous_enemies", false);
+    }
     return this.forwardToFirstSubgoal(msg);
   }
 };

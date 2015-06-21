@@ -12,14 +12,19 @@ var Steerer = function(state) {
   this.gamestate = state;
   this.parameters = {};
   this.parameters.seek = {
-    max_see_ahead: 10 // navigation interval length, TODO: set using 
+    max_see_ahead: 10, // navigation interval length, TODO: set using 
     // argument
+    dist_multiplier: 10
   };
   this.parameters.avoid = {
     max_see_ahead: 300, // Time in ms to look ahead for a collision.
     assumed_difference: 35,
     spike_intersection_radius: this.gamestate.parameters.game.radius.spike +
       this.gamestate.parameters.game.radius.ball
+  };
+  this.parameters.dynamic_avoid = {
+    look_ahead: 50,
+    player_intersection_radius: 38
   };
   this.parameters.align = {
     num_points_prior: 3,
@@ -64,6 +69,9 @@ Steerer.prototype.inverseSteering = function(n) {
   // Calculate costs.
   var costs = [];
   costs.push(this.inverseStaticAvoid(vectors));
+  if (this.botstate.dangerous_enemies) {
+    costs.push(this.inverseDynamicAvoid(vectors));
+  }
   costs.push(this.inverseSeek(vectors));
   this.costs = costs;
 
@@ -94,7 +102,7 @@ Steerer.prototype.inverseSteering = function(n) {
   if (this.botstate.target.movement == "arrive") {
     var distance = this.botstate.target.loc.dist(this.gamestate.location());
     // TODO: Scale vector with distance to target.
-    var scaled = vectors[idx].mul(distance / 80);
+    var scaled = vectors[idx].mul(distance / 40);
     return clampVector(scaled, -2.5, 2.5);
   } else {
     return clampVector(vectors[idx].mul(2), -2.5, 2.5);
@@ -107,11 +115,56 @@ Steerer.prototype.inverseSteering = function(n) {
  * @param {Array.<Point>} vectors - The directions to consider.
  */
 Steerer.prototype.inverseStaticAvoid = function(vectors) {
-  var costs = zeroArray(vectors.length);
   var params = this.parameters.avoid;
 
   // For determining intersection and cost of distance.
   var SPIKE_INTERSECTION_RADIUS = params.spike_intersection_radius;
+  var spikes = this.gamestate.getspikes();
+  spikes = spikes.map(function (spike) {
+    return {
+      loc: spike,
+      radius: SPIKE_INTERSECTION_RADIUS
+    };
+  });
+  return this.inverseAvoid(vectors, spikes);
+};
+
+Steerer.prototype.inverseDynamicAvoid = function(vectors) {
+  // Ids of enemies that are dangerous.
+  var dangerousEnemies = this.botstate.dangerous_enemies;
+
+  // Project areas of influence.
+  var obstacles = dangerousEnemies.map(function (id) {
+    return this.getInfluenceRegion(id);
+  }, this).filter(function (obstacle) {
+    return obstacle !== null;
+  });
+  return this.inverseAvoid(vectors, obstacles);
+};
+
+/**
+ * Get region of influence that bot will try to stay away from.
+ * @param {integer} id - The id of the player to avoid.
+ * @return {Obstacle?} - The obstacle object corresponding to the
+ *   player, or null if player should be disregarded.
+ */
+Steerer.prototype.getInfluenceRegion = function(id) {
+  if (this.gamestate.visible(id)) {
+    var params = this.parameters.dynamic_avoid;
+    // TODO: Parameter on look-ahead
+    return {
+      loc: this.gamestate.pLocation(id, params.look_ahead),
+      radius: params.player_intersection_radius
+    };
+  } else {
+    return null;
+  }
+};
+
+Steerer.prototype.inverseAvoid = function(vectors, obstacles) {
+  var costs = zeroArray(vectors.length);
+  var params = this.parameters.avoid;
+
   // For determining how many ms to look ahead for the location to use
   // as the basis for seeing the impact a direction will have.
   var LOOK_AHEAD = params.max_see_ahead;
@@ -128,35 +181,24 @@ Steerer.prototype.inverseStaticAvoid = function(vectors) {
 
   var relative_location = ahead.sub(position);
 
-  var spikes = this.gamestate.getspikes();
-
   var bad_directions = [];
   vectors.forEach(function(vector, i) {
     vector = relative_location.add(vector.mul(DIR_LOOK_AHEAD));
     var veclen = vector.len();
     // Put vector relative to predicted position.
     vector = vector.normalize();
-    for (var j = 0; j < spikes.length; j++) {
-      var spike = spikes[j];
+    for (var j = 0; j < obstacles.length; j++) {
+      var obstacle = obstacles[j];
       // Skip spikes that are too far away to matter.
-      if (spike.dist(position) - SPIKE_INTERSECTION_RADIUS > veclen) continue;
+      if (obstacle.loc.dist(position) - obstacle.radius > veclen) continue;
       collision = geo.util.lineCircleIntersection(
         position,
         vector,
-        spike,
-        SPIKE_INTERSECTION_RADIUS
+        obstacle.loc,
+        obstacle.radius
       );
       if (collision.collides) {
         costs[i] += 50;
-        /*
-        if (collision.inside) {
-          costs[i] += 100;
-        } else {
-          // Calculate cost.
-          costs[i] += clamp(SPIKE_INTERSECTION_RADIUS / ahead.dist(collision.point), 0, 100);
-        }*/
-      } else {
-
       }
     }
   });
@@ -184,15 +226,8 @@ Steerer.prototype.inverseSeek = function(vectors) {
     var goal = this.botstate.target.loc.sub(p).normalize();
     
     vectors.forEach(function(vector, i) {
-      var val = vector.dot(goal);
-      if (val <= 0) {
-        // Vector points away from or at 90 degrees to goal.
-        costs[i] = 20;
-      } else {
-        // Vector points towards goal, with less penalty the closer it
-        // points.
-        costs[i] = clamp(1 / val, 0, 20);
-      }
+      var val = vector.dist(goal) * params.dist_multiplier;
+      costs[i] = clamp(val, 0, 20);
     });
   }
   return costs;

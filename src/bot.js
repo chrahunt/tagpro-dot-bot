@@ -31,7 +31,8 @@ var Bot = function(gamestate, logger) {
 
   this.state = {
     position: "offense",
-    control: "automatic"
+    control: "automatic",
+    enemies: false // ids of players to be avoided.
   };
 
   this.initialized = false;
@@ -57,11 +58,6 @@ Bot.prototype.init = function() {
   this.mover = new Mover(this.game);
   this.steerer = new Steerer(this.game);
   this.sense_queue = [];
-
-  // Sensed keeps track of sensed states.
-  this.sensed = {
-    dead: false
-  };
   this.lastSense = 0;
 
   this.initializeParameters();
@@ -70,9 +66,12 @@ Bot.prototype.init = function() {
   this.info = {
     updates: 50 // Updates/second default value
   };
-  this.game.addPlayerListener("boost", function (info) {
-    this.sense_queue.push("boost");
-  }.bind(this));
+  var events = ["boost", "dead", "alive", "grab", "cap"];
+  events.forEach(function (event) {
+    this.game.addPlayerListener(event, function () {
+      this.sense_queue.push(event);
+    }.bind(this));
+  }, this);
   this.initialized = true;
   this.logger.log("bot", "Bot loaded."); // DEBUG
 };
@@ -166,18 +165,7 @@ Bot.prototype.update = function() {
  */
 Bot.prototype.sense = function() {
   var self = this.game.player();
-  // Dead/alive.
-  if (self.dead) {
-    // Just died.
-    if (!this.sensed.dead) {
-      this.sensed.dead = true;
-      this.brain.handleMessage("dead");
-    }
-  } else if (this.sensed.dead) {
-    // Just respawned.
-    this.sensed.dead = false;
-    this.brain.handleMessage("alive");
-  }
+
   // Navmesh updated.
   if (this.navUpdate) {
     this.brain.handleMessage("navUpdate");

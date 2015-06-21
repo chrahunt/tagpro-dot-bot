@@ -39,25 +39,53 @@ GameState.prototype.init = function() {
 
 /**
  * Initialize event listeners that get sent to the bot.
+ * @private
  */
 GameState.prototype.initEventListener = function() {
-  this.listeners = {
-    boost: {}
-  };
   var self = this;
+  function callListeners(id, name, val) {
+    if (typeof val == "undefined") val = true;
+    if (self.listeners.hasOwnProperty(name) && self.listeners[name][id]) {
+      self.listeners[name][id].forEach(function (fn) {
+        fn(val);
+      });
+    }
+  }
+  this.listeners = {
+    boost: {},
+    dead: {},
+    alive: {},
+    flag: {}
+  };
   this.socket.on('p', function (updates) {
     updates = updates.u || updates;
     updates.forEach(function (update) {
       var id = update.id;
-      if (!update.hasOwnProperty('lx') || !update.hasOwnProperty('ly')) return;
+      // Boost listener.
       // boost velocity magnitude is 7.44 by default or 7.41 with pressing in 
       // the opposite direction
       if (Math.abs(update.lx) >= 7.41 || Math.abs(update.ly) >= 7.41) {
-        if (self.listeners.boost && self.listeners.boost[id]) {
-          self.listeners.boost[id].forEach(function (fn) {
-            fn("boost");
-          });
+        callListeners(id, "boost");
+      }
+
+      // Life listener.
+      if (update.hasOwnProperty("dead")) {
+        if (update.dead) {
+          callListeners(id, "dead");
+        } else {
+          callListeners(id, "alive");
         }
+      }
+
+      // Flag listener.
+      if (update.hasOwnProperty("flag")) {
+        if (update.flag) {
+          callListeners(id, "grab");
+        }
+      }
+
+      if (update.hasOwnProperty("s-captures")) {
+        callListeners(id, "cap");
       }
     });
   });
