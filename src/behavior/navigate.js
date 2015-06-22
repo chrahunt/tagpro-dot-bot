@@ -10,10 +10,10 @@ var Goal = require('./goals').Goal,
  * @param {Bot} bot - The bot.
  * @param {Point} point - The point to navigate to.
  */
-var NavigateToPoint = function(bot, point) {
+function NavigateToPoint(bot, point) {
   CompositeGoal.apply(this, arguments);
   this.point = point;
-};
+}
 
 util.inherits(NavigateToPoint, CompositeGoal);
 exports.NavigateToPoint = NavigateToPoint;
@@ -41,6 +41,7 @@ NavigateToPoint.prototype.activate = function() {
 };
 
 NavigateToPoint.prototype.process = function() {
+  this.reactivateIfFailed();
   this.activateIfInactive();
   
   var status = this.processSubgoals();
@@ -83,12 +84,12 @@ NavigateToPoint.prototype.handleMessage = function(msg) {
  * @param {} callback - The callback function to be invoked when the
  *   path has been calculated.
  */
-var CalculatePath = function(bot, start, end, callback) {
+function CalculatePath(bot, start, end, callback) {
   Goal.apply(this, arguments);
   this.start = start;
   this.end = end;
   this.callback = callback;
-};
+}
 
 util.inherits(CalculatePath, Goal);
 
@@ -173,11 +174,11 @@ CalculatePath.prototype._postProcessPath = function(path) {
  * @param {Bot} bot - The bot.
  * @param {Array.<Point>} path - The path to follow.
  */
-var FollowPath = function(bot, path) {
+function FollowPath(bot, path) {
   CompositeGoal.apply(this, arguments);
   this.path = path;
   this.reactivate_threshold = 20;
-};
+}
 
 util.inherits(FollowPath, CompositeGoal);
 
@@ -239,8 +240,10 @@ FollowPath.prototype.process = function() {
     if (this.status !== GoalStatus.failed && this.status !== GoalStatus.completed) {
       var status = this.processSubgoals();
       // Add next point onto path if possible.
-      if (status == GoalStatus.completed && this.path.length !== 2) {
+      if (status == GoalStatus.completed) {// && this.path.length !== 2) {
         this.activate();
+      } else {
+
       }
     }
   }
@@ -326,10 +329,10 @@ FollowPath.prototype._isLastPoint = function(point) {
  * @param {Bot} bot
  * @param {Point} point - The point to navigate to.
  */
-var SeekToPoint = function(bot, point) {
+function SeekToPoint(bot, point) {
   Goal.apply(this, arguments);
   this.point = point;
-};
+}
 
 util.inherits(SeekToPoint, Goal);
 
@@ -356,7 +359,7 @@ SeekToPoint.prototype.process = function() {
   // Check if at position.
   if (position.dist(this.point) < 20) {
     this.status = GoalStatus.completed;
-    this.bot.setState("target", false);
+    //this.bot.setState("target", false);
   } else if (!this.bot.navmesh.checkVisible(position, this.point)) {
     this.status = GoalStatus.failed;
   }
@@ -377,10 +380,10 @@ SeekToPoint.prototype.terminate = function() {
  * @param {Bot} bot
  * @param {Point} point - The point to navigate to.
  */
-var ArriveToPoint = function(bot, point) {
+function ArriveToPoint(bot, point) {
   Goal.apply(this, arguments);
   this.point = point;
-};
+}
 
 util.inherits(ArriveToPoint, Goal);
 
@@ -425,11 +428,11 @@ ArriveToPoint.prototype.terminate = function() {
  * @param {Point} point - The desired point.
  * @param {Point} velocity - The desired velocity at that point.
  */
-var Align = function(bot, point, velocity) {
+function Align(bot, point, velocity) {
   Goal.apply(this, arguments);
   this.point = point;
   this.velocity = velocity;
-};
+}
 
 util.inherits(Align, Goal);
 exports.Align = Align;

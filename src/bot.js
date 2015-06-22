@@ -66,12 +66,19 @@ Bot.prototype.init = function() {
   this.info = {
     updates: 50 // Updates/second default value
   };
+  
+  // Listen for own player events.
   var events = ["boost", "dead", "alive", "grab", "cap"];
   events.forEach(function (event) {
     this.game.addPlayerListener(event, function () {
-      this.sense_queue.push(event);
+      this.touch(event);
     }.bind(this));
   }, this);
+
+  // Listen for powerup information.
+  this.game.addPowerupListener(function (event) {
+    this.touch(event);
+  }.bind(this));
   this.initialized = true;
   this.logger.log("bot", "Bot loaded."); // DEBUG
 };
@@ -257,6 +264,29 @@ Bot.prototype.stop = function() {
 };
 
 /**
+ * Pause bot, but preserve state.
+ */
+Bot.prototype.pause = function() {
+  this.logger.log("bot", "Pausing bot.");
+  this.stopped = true;
+  this.actions.remove("think");
+  this.actions.remove("update");
+  // Stop moving.
+  var stopping = setTimeout(function stop() {
+    // Don't continue trying to stop if restarted.
+    if (!this.stopped) return;
+    var cutoff = 0.01;
+    var v = this.game.velocity();
+    var zero = new Point(0, 0);
+    if (v.dist(zero) > cutoff) {
+      this.mover.move(new Point(0, 0));
+      stopping = setTimeout(stop.bind(this), 20);
+    } else {
+      this.mover.press({});
+    }
+  }.bind(this), 20);
+};
+/**
  * Starts the bot.
  */
 Bot.prototype.start = function() {
@@ -270,8 +300,19 @@ Bot.prototype.start = function() {
   }
 
   this.brain.think();
-  this.actions.add("think", this.brain.think.bind(this.brain), this.parameters.intervals.think);
+  //this.actions.add("think", this.brain.think.bind(this.brain), this.parameters.intervals.think);
   this.actions.add("update", this.update.bind(this), this.parameters.intervals.update);
+};
+
+/**
+ * Add an event to the bot's sensations, to be processed in the next tick.
+ * Does nothing if the bot is stopped.
+ * @param {*} event - The sensation.
+ */
+Bot.prototype.touch = function(event) {
+  // DEBUG: should not have manual.
+  if (this.stopped) return;// || this.state.control == "manual") return;
+  this.sense_queue.push(event);
 };
 
 /**

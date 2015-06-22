@@ -9,7 +9,7 @@ GoalStatus = {
 };
 exports.GoalStatus = GoalStatus;
 
-var Goal = function(bot) {
+function Goal(bot) {
   this.bot = bot;
   this.status = GoalStatus.inactive;
 };
@@ -91,10 +91,10 @@ Goal.prototype.hasFailed = function() {
  * @constructor
  * @param {Bot} bot
  */
-CompositeGoal = function(bot) {
+function CompositeGoal(bot) {
   Goal.apply(this, arguments);
   this.subgoals = [];
-};
+}
 
 util.inherits(CompositeGoal, Goal);
 exports.CompositeGoal = CompositeGoal;

@@ -11,12 +11,12 @@ var Point = require('../geometry').Point;
  * This goal is concerned with making decisions and guiding the
  * behavior of the bot.
  */
-var Brain = function(bot) {
+function Brain(bot) {
   CompositeGoal.apply(this, arguments);
   // Game type, either ctf or cf
   this.gameType = this.bot.game.gameType();
   this.alive = this.bot.game.alive();
-};
+}
 module.exports = Brain;
 
 util.inherits(Brain, CompositeGoal);
@@ -64,6 +64,10 @@ Brain.prototype.handleMessage = function(msg) {
     this.terminate();
     this.status = GoalStatus.inactive;
     return true;
+  } else if (typeof msg == "object") {
+    // Handle powerup messages.
+    //console.log("Received powerup message!");
+    //console.log(msg);
   } else {
     // Handle messages that impact steering obstacles, but still forward
     // to first subgoal.
@@ -76,14 +80,15 @@ Brain.prototype.handleMessage = function(msg) {
     } else if (msg == "cap") {
       this.bot.setState("dangerous_enemies", false);
     }
-    return this.forwardToFirstSubgoal(msg);
   }
+  return this.forwardToFirstSubgoal(msg);
 };
 
 /**
  * Choose action to take.
  */
 Brain.prototype.think = function() {
+  if (!this.alive) return;
   var control = this.bot.getState("control");
   if (control == "automatic") {
     if (this.gameType == this.bot.game.GameTypes.ctf) {
@@ -114,4 +119,19 @@ Brain.prototype.think = function() {
       this.addSubgoal(new ManualControl(this.bot));
     }
   }
+};
+
+/**
+ * Print current state of behavior tree.
+ */
+Brain.prototype.print = function() {
+  var strings = [];
+  var format = "%s (%d)";
+  strings.push(util.format(format, this.constructor.name, this.status));
+  var next = this.subgoals.length > 0 && this.subgoals[0];
+  while (next) {
+    strings.push(util.format(format, next.constructor.name, next.status));
+    next = next.subgoals && next.subgoals.length > 0 && next.subgoals[0];
+  }
+  console.log(strings.join(" > "));
 };

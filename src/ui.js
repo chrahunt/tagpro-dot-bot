@@ -53,6 +53,11 @@ UI.prototype.init = function() {
       $(this).text("Start Bot");
     }
   });
+  $("#bot-pause").click(function () {
+    if (!self.bot.stopped) {
+      self.bot.pause();
+    }
+  });
   $("#do-boost").click(function (e) {
     // Manual boost info for mid-left boost on boombox.
     var info = {
@@ -174,7 +179,7 @@ UI.prototype.init = function() {
     parseInfo();
     setTimeout(function () {
       this.resizeAndCenterView();
-    }.bind(this), 100);
+    }.bind(this), 200);
   }.bind(this), 20);
 };
 

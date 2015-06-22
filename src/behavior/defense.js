@@ -8,9 +8,9 @@ var Goal = require('./goals').Goal,
  * preventing an enemy capture, and chasing and returning the
  * enemy flag carrier.
  */
-var Defense = function(bot) {
+function Defense(bot) {
   CompositeGoal.apply(this, arguments);
-};
+}
 
 util.inherits(Defense, CompositeGoal);
 module.exports = Defense;
@@ -59,9 +59,9 @@ Defense.prototype.handleMessage = function(msg) {
  * Implements strategies and behaviors related to the goal of in-base
  * defense. Assumes we're located in-base.
  */
-var DefendFlag = function(bot) {
+function DefendFlag(bot) {
   CompositeGoal.apply(this, arguments);
-};
+}
 
 util.inherits(DefendFlag, CompositeGoal);
 
@@ -91,9 +91,9 @@ DefendFlag.prototype.handleMessage = function(msg) {
  * Holds the strategy of no-grab defense. Push enemies away from
  * own flag.
  */
-var NoGrabDefense = function(bot) {
+function NoGrabDefense(bot) {
   CompositeGoal.apply(this, arguments);
-};
+}
 
 util.inherits(NoGrabDefense, CompositeGoal);
 
@@ -126,11 +126,11 @@ NoGrabDefense.prototype.process = function() {
  *   the flag.
  * @param {Point} point - The point to keep the target away from.
  */
-var KeepPlayerFromPoint = function(bot, target, point) {
+function KeepPlayerFromPoint(bot, target, point) {
   CompositeGoal.apply(this, arguments);
   this.target = this.bot.game.player(target);
   this.point = point;
-};
+}
 
 util.inherits(KeepPlayerFromPoint, CompositeGoal);
 
@@ -174,11 +174,11 @@ KeepPlayerFromPoint.prototype.process = function() {
  *   the flag.
  * @param {Point} point - The point to keep the target away from.
  */
-var StaticInterpose = function(bot, target, point) {
+function StaticInterpose(bot, target, point) {
   CompositeGoal.apply(this, arguments);
   this.target = this.bot.game.player(target);
   this.point = point;
-};
+}
 
 util.inherits(StaticInterpose, CompositeGoal);
 
@@ -220,12 +220,12 @@ StaticInterpose.prototype.process = function() {
  * @param {Point} ray - Unit vector direction from point in which to
  *   push the player.
  */
-var PushPlayerAway = function(bot, target, point, ray) {
+function PushPlayerAway(bot, target, point, ray) {
   Goal.apply(this, arguments);
   this.target = target;
   this.point = point;
   this.ray = ray;
-};
+}
 
 util.inherits(PushPlayerAway, Goal);
 
@@ -241,19 +241,18 @@ PushPlayerAway.prototype.process = function() {
   
 };
 
-var ContainmentDefense = function(bot) {
+function ContainmentDefense(bot) {
   CompositeGoal.apply(this, arguments);
-};
+}
 
 util.inherits(ContainmentDefense, CompositeGoal);
-
 
 /**
  * Defense strategy to use when flag is out-of-base.
  */
-var OffensiveDefense = function(bot) {
+function OffensiveDefense(bot) {
   CompositeGoal.apply(this, arguments);
-};
+}
 
 util.inherits(OffensiveDefense, CompositeGoal);
 

@@ -9,9 +9,9 @@ var NavigateToPoint = require('./navigate').NavigateToPoint,
  * Handles manual control actions, mostly for debugging.
  * @param {Bot} bot - The bot.
  */
-var ManualControl = function(bot) {
+function ManualControl(bot) {
   CompositeGoal.apply(this, arguments);
-};
+}
 
 util.inherits(ManualControl, CompositeGoal);
 module.exports = ManualControl;
@@ -79,10 +79,10 @@ ManualControl.prototype.handleMessage = function(msg) {
  * @param {[type]} bot [description]
  * @param {[type]} info [description]
  */
-var Boost = function(bot, info) {
+function Boost(bot, info) {
   CompositeGoal.apply(this, arguments);
   this.info = info;
-};
+}
 util.inherits(Boost, CompositeGoal);
 
 /**

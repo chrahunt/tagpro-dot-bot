@@ -1,3 +1,5 @@
+var PowerupTracker = require('./powerup-tracker');
+
 /**
  * The GameState object is responsible for providing information
  * about the environment, including the player's location within it.
@@ -16,6 +18,9 @@ var GameState = function(tagpro) {
     radius: {
       spike: 15,
       ball: 19
+    },
+    respawn: {
+      powerup: 60e3 // powerup respawn time, in ms.
     }
   };
   this._initialized = false;
@@ -34,6 +39,7 @@ GameState.prototype.init = function() {
   this.socket = this.tagpro.socket;
   this.optimizations();
   this.initEventListener();
+  this.initPowerupTracker();
   this._initialized = true;
 };
 
@@ -91,6 +97,49 @@ GameState.prototype.initEventListener = function() {
   });
 };
 
+GameState.prototype.initPowerupTracker = function() {
+  if (!tagpro.map) {
+    setTimeout(this.initPowerupTracker.bind(this), 20);
+    return;
+  }
+  this.listeners.powerup = [];
+  var params = this.parameters.powerups = {
+    interval: 2e3
+  };
+  console.log("Initializing powerup tracker.");
+  this.powerupTracker = new PowerupTracker(this);
+  this.powerupTracker.onGrab(function (event) {
+    this.listeners.powerup.forEach(function (fn) {
+      fn(event);
+    });
+  }.bind(this));
+
+  this.powerupTracker.onSpawn(function (event) {
+    this.listeners.powerup.forEach(function (fn) {
+      fn(event);
+    });
+  }.bind(this));
+  // Loop to get powerup information and send it to the bot.
+  this.pupLoop = setInterval(function () {
+    var powerupData = this.powerupTracker.getPowerups();
+    var powerups = {
+      respawning: powerupData.filter(function (powerup) {
+        return powerup.present_known && !powerup.present && powerup.taken_time_known;
+      }),
+      unknown: powerupData.filter(function (powerup) {
+        return !powerup.present_known || (!powerup.present && !powerup.taken_time_known);
+      }),
+      spawned: powerupData.filter(function (powerup) {
+        return powerup.present_known && powerup.present;
+      }),
+      name: "powerups"
+    };
+    this.listeners.powerup.forEach(function (fn) {
+      fn(powerups);
+    });
+  }.bind(this), params.interval);
+};
+
 /**
  * Add a listener for a player event.
  * @param {integer} [id]- The id of the player to listen for an event
@@ -113,6 +162,16 @@ GameState.prototype.addPlayerListener = function(id, name, callback) {
     this.listeners[name][id] = [];
   }
   this.listeners[name][id].push(callback);
+};
+
+/**
+ * Add a listener for powerup events, including the main powerup event,
+ * spawns, and grabs.
+ * @param {Function} callback - The function to be called with the
+ *   above events.
+ */
+GameState.prototype.addPowerupListener = function(callback) {
+  this.listeners.powerup.push(callback);
 };
 
 /**
@@ -428,6 +487,44 @@ GameState.prototype.alive = function(id) {
 };
 
 /**
+ * Checks whether a tile is currently visible to a player with the
+ * given id.
+ * @param {integer} [id] - The id of the player to check tile visibility
+ *   for.
+ * @param {Point} tile - Array location of tile.
+ * @param {number} [buffer] - The distance from the edge of the actual
+ *   view area a tile must be to be considered "in-view". Default is
+ *   80.
+ * @return {boolean}
+ */
+GameState.prototype.tileVisible = function(id, tile, buffer) {
+  var TILE_WIDTH = 40;
+  if (typeof id !== "number") {
+    player = this.player();
+    if (typeof tile !== "undefined") {
+      buffer = tile;
+    }
+    tile = id;
+  } else {
+    player = this.player(id);
+  }
+  if (typeof buffer == "undefined") buffer = 80;
+  var diff = {
+    x: Math.abs(tile.x * TILE_WIDTH - player.x),
+    y: Math.abs(tile.y * TILE_WIDTH - player.y)
+  };
+  var max = {
+    x: 660,
+    y: 420
+  };
+  if (diff.x < (max.x - buffer) && diff.y < (max.y - buffer)) {
+    return true;
+  } else {
+    return false;
+  }
+};
+
+/**
  * Locates the enemy flag. If found and not taken, the `state` of the
  * returned search result will be true, and false otherwise. If not
  * found, then null is returned.
@@ -571,6 +668,37 @@ GameState.prototype.findTiles = function(tile) {
     }
   }
   return tiles_found;
+};
+
+/**
+ * Takes an array location and gives the traversable tiles adjacent to
+ * that tile.
+ * @param {Point} loc - The array location to search adjacent to.
+ * @return {Array.<point>} - The array locations next to the tile.
+ */
+GameState.prototype.getTraversableTilesNextTo = function(loc) {
+  var bad_tiles = [7];
+  var traversableTiles = [];
+  var offsets = [-1, 0, 1];
+  var x = loc.x;
+  var y = loc.y;
+  for (var i = 0; i < offsets.length; i++) {
+    for (var j = 0; j < offsets.length; j++) {
+      var thisX = x + offsets[i],
+          thisY = y + offsets[j];
+      if ((thisX < 0 || thisX > tagpro.map.length - 1) ||
+        (thisY < 0 || thisY > tagpro.map.length - 1) ||
+        (thisX === x && thisY === y)) {
+        continue;
+      } else {
+        var val = tagpro.map[thisX][thisY];
+        if (bad_tiles.indexOf(val) !== -1) {
+          traversableTiles.push(new Point(thisX, thisY));
+        }
+      }
+    }
+  }
+  return traversableTiles;
 };
 
 // Identify the game time, whether capture the flag or yellow flag.
