@@ -1,4 +1,184 @@
 /**
+ * @module overlay
+ */
+
+// Various drawings.
+// Drawing has properties init, update, hide, show.
+var drawings = [
+  { // Desired velocity.
+    init: function (bot, draw) {
+      this.bot = bot;
+      this.draw = draw;
+      this.draw.addVector("desired", 0x0000ff);
+    },
+    update: function () {
+      if (this.bot.desired_vector) this.draw.updateVector("desired", this.bot.desired_vector.mul(10));
+    },
+    show: function () {
+      this.draw.showVector("desired");
+    },
+    hide: function () {
+      this.draw.hideVector("desired");
+    }
+  }, { // Navigation mesh.
+    init: function (bot, draw) {
+      this.bot = bot;
+      this.draw = draw;
+      this.draw.addBackground("mesh", 0x555555);
+      this._init();
+    },
+    _init: function () {
+      if (!this.bot.navmesh && !this.bot.navmesh.polys) {
+        setTimeout(this._init.bind(this), 50);
+        return;
+      }
+      this.bot.navmesh.onUpdate(function (polys) {
+        this.draw.updateBackground("mesh", polys);
+      });
+      this.draw.updateBackground("mesh", this.bot.navmesh.polys);
+    },
+    update: function () {},
+    show: function () {},
+    hide: function () {}
+  }, { // Manually-set goal point.
+    init: function (bot, draw) {
+      this.bot = bot;
+      this.draw = draw;
+      this.draw.addPoint("manual_target", 0xffff00, "foreground");
+    },
+    update: function () {
+      if (this.bot.getState("control") == "manual") {
+        var manual_target = this.bot.getState("manual_target");
+        if (manual_target) {
+          this.draw.showPoint("manual_target");
+          this.draw.updatePoint("manual_target", manual_target);
+        } else {
+          this.hide();
+        }
+      }
+    },
+    show: function () {
+      this.draw.showPoint("manual_target");
+    },
+    hide: function () {
+      this.draw.hidePoint("manual_target");
+    }
+  }, { // Next point when following path.
+    init: function (bot, draw) {
+      this.bot = bot;
+      this.draw = draw;
+      this.draw.addPoint("next_point", 0x00ff00, "foreground");
+    },
+    update: function () {
+      var goal = this.bot.getState("target");
+      if (goal) {
+        this.draw.showPoint("next_point");
+        this.draw.updatePoint("next_point", goal.loc);
+      } else {
+        this.hide();
+      }
+    },
+    show: function () {
+      this.draw.showPoint("next_point");
+    },
+    hide: function () {
+      this.draw.hidePoint("next_point");
+    }
+  }, { // Steering cost vectors.
+    init: function (bot, draw) {
+      this.bot = bot;
+      this.draw = draw;
+      this.cost_vector_container = new PIXI.Graphics();
+      this.cost_vector_container.x = 20;
+      this.cost_vector_container.y = 20;
+      this.draw.addSpriteChild(this.cost_vector_container);
+    },
+    _draw: function (costs, color) {
+      this.cost_vector_container.lineStyle(2, color, 1);
+      var angle = 2 * Math.PI / costs.length;
+      for (var i = 0; i < costs.length; i++) {
+        this.cost_vector_container.moveTo(0, 0);
+        var cost = costs[i];
+        var x = Math.cos(angle * i) * cost;
+        var y = Math.sin(angle * i) * cost;
+        this.cost_vector_container.lineTo(x, y);
+      }
+    },
+    update: function () {
+      this.cost_vector_container.clear();
+      if (this.bot.steerer.costs) {
+        var colors = {
+          static_avoid: 0xEE0000,
+          seek: 0x0000EE,
+          dynamic_avoid: 0xEEEE00
+        };
+        var costs = this.bot.steerer.costs;
+        if (costs.length == 2) {
+          // No dynamic obstacle avoidance.
+          this._draw(costs[0], colors.static_avoid);
+          this._draw(costs[1], colors.seek);
+        } else {
+          // Includes dynamic obstacle avoidance.
+          this._draw(costs[0], colors.static_avoid);
+          this._draw(costs[1], colors.dynamic_avoid);
+          this._draw(costs[2], colors.seek);
+        }
+      }
+    },
+    show: function () {
+      this.cost_vector_container.visible = true;
+    },
+    hide: function () {
+      this.cost_vector_container.visible = false;
+    }
+  }
+];
+
+/**
+ * Visual overlay to display real-time state over the game.
+ * @param {Bot} bot - The bot.
+ */
+var Overlay = function(bot) {
+  this.bot = bot;
+  this.draw = new DrawUtils();
+  drawings.forEach(function (drawing) {
+    drawing.init(this.bot, this.draw);
+  }, this);
+  this.check();
+};
+module.exports = Overlay;
+
+// Interval to check/update vectors.
+Overlay.prototype.update = function() {
+  if (this.bot.stopped) {
+    this.stopped = true;
+    drawings.forEach(function (drawing) {
+      drawing.hide();
+    });
+    // Set loop to check later.
+    this.check();
+    return;
+  } else {
+    requestAnimationFrame(this.update.bind(this));
+    drawings.forEach(function (drawing) {
+      drawing.update();
+    });
+  }
+};
+
+// Check if the bot has started and start the animation if so.
+Overlay.prototype.check = function() {
+  if (!this.bot.stopped) {
+    drawings.forEach(function (drawing) {
+      drawing.show();
+    });
+    requestAnimationFrame(this.update.bind(this));
+  } else {
+    setTimeout(this.check.bind(this), 200);
+  }
+};
+
+/**
  * DrawUtils holds canvas-drawing responsibility, including keeping track of
  * what items are to be drawn on the canvas as well as how to actually do it.
  * To add an item to be drawn, simply register it using the register function,
@@ -6,11 +186,11 @@
  * object. Objects must have 'item' and 'color' properties. The item must point
  * to a Poly, Edge, or Point, and the color property must point to a string defining
  * the color to be used in drawing the item.
+ * @constructor
  */
-DrawUtils = function() {
+function DrawUtils() {
   this.init();
-};
-module.exports = DrawUtils;
+}
 
 // Initialize drawing functions.
 DrawUtils.prototype.init = function() {
@@ -330,7 +510,7 @@ DrawUtils.prototype._convertPolyToPixiPoly = function(poly) {
 
 /**
  * Add child to main ball sprite.
- * @param {[type]} container [description]
+ * @param {PIXI.Container} container - The container to add.
  */
 DrawUtils.prototype.addSpriteChild = function(container) {
   this.self.sprite.addChild(container);

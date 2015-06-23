@@ -1,7 +1,7 @@
 var Logger = require('bragi');
 var Bot = require('./bot');
 var GameState = require('./browserGameState');
-var BotDraw = require('./botdraw');
+var Overlay = require('./overlay');
 var UI = require('./ui');
 var Control = require('./control');
 
@@ -31,7 +31,7 @@ waitForDeps(function () {
 
   // Start.
   var bot = new Bot(state, Logger);
-  var botdraw = new BotDraw(bot);
+  var overlay = new Overlay(bot);
   var ui = new UI(bot);
   var control = new Control(bot);
 
