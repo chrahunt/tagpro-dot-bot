@@ -1,4 +1,7 @@
 /**
+ * @module geometry
+ */
+/**
  * A point can represent a vertex in a 2d environment or a vector.
  * @constructor
  * @param {number} x - The `x` coordinate of the point.

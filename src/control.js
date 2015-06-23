@@ -3,8 +3,13 @@ var geo = require('./geometry');
 var Point = geo.Point;
 
 /**
+ * @module control
+ */
+/**
  * Manual controller for bot, allowing various actions.
  * uses tagpro
+ * @alias control
+ * @class Control
  * @param {Bot} bot - The bot to control.
  */
 var Control = function(bot) {

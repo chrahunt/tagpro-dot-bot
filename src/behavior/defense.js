@@ -1,12 +1,20 @@
 var util = require('util');
+
 var Goal = require('./goals').Goal,
     CompositeGoal = require('./goals').CompositeGoal,
     GoalStatus = require('./goals').GoalStatus;
 
 /**
+ * @module behavior/defense
+ */
+/**
  * The Defense goal is concerned with defending a flag in base,
  * preventing an enemy capture, and chasing and returning the
  * enemy flag carrier.
+ * @exports behavior/defense
+ * @extends module:behavior/goals.CompositeGoal
+ * @constructor
+ * @param {Bot} bot - The bot.
  */
 function Defense(bot) {
   CompositeGoal.apply(this, arguments);
@@ -58,6 +66,8 @@ Defense.prototype.handleMessage = function(msg) {
 /**
  * Implements strategies and behaviors related to the goal of in-base
  * defense. Assumes we're located in-base.
+ * @extends CompositeGoal
+ * @constructor
  */
 function DefendFlag(bot) {
   CompositeGoal.apply(this, arguments);
@@ -90,6 +100,8 @@ DefendFlag.prototype.handleMessage = function(msg) {
 /**
  * Holds the strategy of no-grab defense. Push enemies away from
  * own flag.
+ * @extends CompositeGoal
+ * @constructor
  */
 function NoGrabDefense(bot) {
   CompositeGoal.apply(this, arguments);
@@ -121,6 +133,8 @@ NoGrabDefense.prototype.process = function() {
 
 /**
  * Push an enemy away from the flag.
+ * @extends CompositeGoal
+ * @constructor
  * @param {Bot} bot - The bot.
  * @param {integer} target - The id of the player to push away from
  *   the flag.

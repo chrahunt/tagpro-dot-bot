@@ -5,6 +5,10 @@ var Goal = require('./goals').Goal,
 
 var NavigateToPoint = require('./navigate').NavigateToPoint;
 
+/**
+ * @module
+ */
+
 function GetPowerup(bot, powerup) {
   CompositeGoal.apply(this, arguments);
   this.id = powerup.id;

@@ -1,6 +1,10 @@
 var geo = require('./geometry');
 var Point = geo.Point;
 
+/**
+ * @module powerup-tracker
+ */
+
 // Parameters, constants.
 var TILE_WIDTH = 40;
 // Powerup parameters.
@@ -22,6 +26,7 @@ function arrayRemove(arr, item) {
 
 /**
  * The PowerupTracker tracks the state of powerups.
+ * @constructor
  * @param {Socket} socket - The TagPro game socket.
  * @param {Map} map - The map as sent over the TagPro game socket.
  * @param {object} players - The object storing player information

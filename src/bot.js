@@ -48,7 +48,7 @@ module.exports = Bot;
  * @private
  */
 Bot.prototype.init = function() {
-  this.logger.log("bot", "Initializing Bot.");
+  this.logger.log("bot:info", "Initializing Bot.");
   // Ensure that the tagpro global object has initialized and allocated us an id.
   if (!this.game.initialized()) { return setTimeout(this.init.bind(this), 250); }
 
@@ -80,7 +80,7 @@ Bot.prototype.init = function() {
     this.touch(event);
   }.bind(this));
   this.initialized = true;
-  this.logger.log("bot", "Bot loaded."); // DEBUG
+  this.logger.log("bot:info", "Bot loaded."); // DEBUG
 };
 
 /**
@@ -123,7 +123,7 @@ Bot.prototype.processMap = function(map) {
   // Update navigation mesh visualization and set flag for
   // sense function to pass message to brain.
   this.navmesh.onUpdate(function(polys) {
-    this.logger.log("bot", "Navmesh updated.");
+    this.logger.log("bot:info", "Navmesh updated.");
     this.navUpdate = true;
   }.bind(this));
 
@@ -140,7 +140,7 @@ Bot.prototype.processMap = function(map) {
   // mapupdate packets.
   this.navmesh.listen(this.game.tagpro.socket);
 
-  this.logger.log("bot", "Navmesh constructed.");
+  this.logger.log("bot:info", "Navmesh constructed.");
 
   this.mapInitialized = true;
 };

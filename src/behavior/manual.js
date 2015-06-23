@@ -6,6 +6,9 @@ var NavigateToPoint = require('./navigate').NavigateToPoint,
     Align = require('./navigate').Align;
 
 /**
+ * @module
+ */
+/**
  * Handles manual control actions, mostly for debugging.
  * @param {Bot} bot - The bot.
  */
@@ -76,8 +79,8 @@ ManualControl.prototype.handleMessage = function(msg) {
  */
 /**
  * Takes a boost with the given information.
- * @param {[type]} bot [description]
- * @param {[type]} info [description]
+ * @param {Bot} bot - The bot.
+ * @param {BoostInfo} info - Information for the boost to take.
  */
 function Boost(bot, info) {
   CompositeGoal.apply(this, arguments);
@@ -151,7 +154,6 @@ Boost.prototype.handleMessage = function(msg) {
 
 /**
  * Remove boost test information and terminate subgoals.
- * @return {[type]} [description]
  */
 Boost.prototype.terminate = function() {
   console.log("TERMINATING BOOST.");

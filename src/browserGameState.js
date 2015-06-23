@@ -1,14 +1,17 @@
 var PowerupTracker = require('./powerup-tracker');
 
 /**
+ * @module gamestate
+ */
+/**
  * The GameState object is responsible for providing information
  * about the environment, including the player's location within it.
  * @constructor
- * @alias module:gamestate/browser
+ * @alias module:gamestate
  * @param {TagPro} tagpro - The initialized tagpro object available
  *   in the browser client execution environment.
  */
-var GameState = function(tagpro) {
+function GameState(tagpro) {
   // Initialization
   this.tagpro = tagpro;
   this.parameters = {};
@@ -336,13 +339,13 @@ GameState.prototype.pLocation = function(id, ahead, timeInSteps) {
   var acc_term_x = player.ac * change_x,
       acc_term_y = player.ac * change_y;
   // Max speed check each step.
-  var ms_x = player.ms * change_x,
-      ms_y = player.ms * change_y;
+  var ms_x = player.ms,
+      ms_y = player.ms;
   var damping_factor = 1 - damping * dt;
 
   for (var step = 0; step < steps; step++) {
-    if (v_x < ms_x) v_x += acc_term_x;
-    if (v_y < ms_y) v_y += acc_term_y;
+    if (Math.abs(v_x) < ms_x) v_x += acc_term_x;
+    if (Math.abs(v_y) < ms_y) v_y += acc_term_y;
     v_x *= damping_factor;
     v_y *= damping_factor;
     d_x += v_x * dt;

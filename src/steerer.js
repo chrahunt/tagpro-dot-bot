@@ -1,6 +1,9 @@
 var geo = require('./geometry');
 var Point = geo.Point;
 /**
+ * @module steerer
+ */
+/**
  * Steerer interface exposes a single function that takes the agent
  * state information and returns a vector representing the velocity
  * that should be taken to best meet the agent's goals.
@@ -144,6 +147,7 @@ Steerer.prototype.inverseDynamicAvoid = function(vectors) {
 
 /**
  * Get region of influence that bot will try to stay away from.
+ * @private
  * @param {integer} id - The id of the player to avoid.
  * @return {Obstacle?} - The obstacle object corresponding to the
  *   player, or null if player should be disregarded.
@@ -235,6 +239,7 @@ Steerer.prototype.inverseSeek = function(vectors) {
 
 /**
  * Aligns with a point/velocity combination.
+ * @private
  * @return {Point} - The desired velocity.
  */
 Steerer.prototype.align = function() {
@@ -273,6 +278,7 @@ Steerer.prototype.align = function() {
 
 /**
  * Seek a specific location, normal vector steering behavior approach.
+ * @private
  * @param {Point} loc - The location to seek
  * @return {Point} - The desired vector.
  */

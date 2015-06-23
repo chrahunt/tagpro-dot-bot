@@ -1,4 +1,7 @@
 /**
+ * @module mover
+ */
+/**
  * The Mover is responsible for executing actions to change agent
  * velocity in the game environment.
  * 
@@ -28,9 +31,24 @@ var Mover = function(state, opts) {
     var socketEmit = tagpro.socket.emit;
     var keyCount = 1;
     var keyState = {};
+    var presses = [];
+    var time = 1000;
+    var limit = 15;
     return function(event, data) {
       if (event === "keyup" || event === "keydown") {
         if (keyState[data.k] === event) return;
+        var now = Date.now();
+        presses.push(now);
+        var recent_presses = presses.filter(function (press) {
+          return now - press < time;
+        });
+        if (recent_presses.length > limit) {
+          recent_presses.pop();
+          presses = recent_presses;
+          return;
+        } else {
+          presses = recent_presses;
+        }
         keyState[data.k] = event;
         data.t = keyCount++;
       }

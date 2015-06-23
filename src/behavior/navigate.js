@@ -4,6 +4,9 @@ var Goal = require('./goals').Goal,
     GoalStatus = require('./goals').GoalStatus;
 
 /**
+ * @module
+ */
+/**
  * This goal navigates to the given point, where the point may be
  * a static location anywhere in the traversable area of the game
  * map.
@@ -183,8 +186,8 @@ function FollowPath(bot, path) {
 util.inherits(FollowPath, CompositeGoal);
 
 /**
- * [activate description]
- * @return {[type]} [description]
+ * Get the next visible point along the path and add a subgoal to move
+ * toward it.
  */
 FollowPath.prototype.activate = function() {
   this.status = GoalStatus.active;
@@ -289,6 +292,7 @@ FollowPath.prototype._getNextPoint = function(limit) {
     }
 
     if (anyVisible) {
+      last_index = Math.min(last_index + 1, path.length - 1);
       path = path.slice(last_index);
       if (path.length == 1) {
         goal = path[0];

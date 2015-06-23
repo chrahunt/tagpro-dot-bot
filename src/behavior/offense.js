@@ -8,6 +8,9 @@ var NavigateToPoint = require('./navigate').NavigateToPoint;
 var GetPowerup = require('./powerup');
 
 /**
+ * @module
+ */
+/**
  * Offense is a goal with the purpose of capturing the enemy flag and
  * returning it to base to obtain a capture.
  * @constructor
@@ -56,7 +59,7 @@ Offense.prototype.process = function() {
 /**
  * Handle own grab and 
  * @param {string} msg - The message
- * @return {[type]} [description]
+ * @return {boolean} - Whether the message was handled.
  */
 Offense.prototype.handleMessage = function(msg) {
   if (msg == "grab" || msg == "cap") {

@@ -1,18 +1,32 @@
 var util = require('util');
 
-GoalStatus = {
+/**
+ * @module behavior/goals
+ */
+
+/**
+ * Enum of statuses that a Goal may be under.
+ * @alias module:behavior/goals.GoalStatus
+ * @type {object}
+ */
+var GoalStatus = exports.GoalStatus = {
   inactive: 1,
   active: 2,
   completed: 3,
   failed: 4,
   waiting: 5
 };
-exports.GoalStatus = GoalStatus;
 
+/**
+ * A Goal represents a specific task to be completed.
+ * @alias module:behavior/goals.Goal
+ * @constructor
+ * @param {Bot} bot - The bot.
+ */
 function Goal(bot) {
   this.bot = bot;
   this.status = GoalStatus.inactive;
-};
+}
 exports.Goal = Goal;
 
 /**
@@ -88,6 +102,8 @@ Goal.prototype.hasFailed = function() {
 
 /**
  * Acts as a goal with subgoals.
+ * @alias module:behavior/goals.CompositeGoal
+ * @extends Goal
  * @constructor
  * @param {Bot} bot
  */

@@ -8,8 +8,13 @@ var Offense = require('./offense'),
 var Point = require('../geometry').Point;
 
 /**
+ * @module behavior/brain
+ */
+/**
  * This goal is concerned with making decisions and guiding the
  * behavior of the bot.
+ * @exports behavior/brain
+ * @constructor
  */
 function Brain(bot) {
   CompositeGoal.apply(this, arguments);

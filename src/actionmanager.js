@@ -1,5 +1,9 @@
 /**
+ * @module
+ */
+/**
  * Initialize the action manager.
+ * @constructor
  */
 var ActionManager = function() {
   this.actions = {};

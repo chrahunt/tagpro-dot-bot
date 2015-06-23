@@ -1,8 +1,23 @@
 var geo = require('./geometry');
 var Point = geo.Point;
+
+/**
+ * @module ui
+ */
 // Initialize the user interface
 // Set up the UI for toggle-able parameter values
 // Add normal controls.
+
+// Contains code to initialize and update the individual sections of
+// the user interface.
+var sections = [
+  { // Bot Controls
+  }, { // Bot State
+  }, { // Other Controls
+  }, { // Bot Values
+  }, { // Bot Parameters
+  }
+];
 
 /**
  * Initialize UI for controlling bot.
