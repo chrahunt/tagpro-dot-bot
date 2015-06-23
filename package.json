@@ -28,7 +28,9 @@
     "gulp": "^3.9.0",
     "gulp-notify": "^2.2.0",
     "gulp-rename": "^1.2.2",
+    "gulp-shell": "^0.4.2",
     "gulp-util": "^3.0.5",
+    "jsdoc": "^3.3.2",
     "lodash.assign": "^3.2.0",
     "vinyl-source-stream": "^1.1.0",
     "watchify": "^3.2.1"

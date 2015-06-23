@@ -5,7 +5,8 @@ var gulp = require('gulp'),
     rename = require('gulp-rename'),
     source = require('vinyl-source-stream'),
     assign = require('lodash.assign'),
-    notify = require('gulp-notify');
+    notify = require('gulp-notify'),
+    shell = require('gulp-shell');
 
 var sourceFile = 'src/browserBot.js';
 gulp.task('build', function() {
@@ -38,3 +39,7 @@ gulp.task('watch', function() {
     b.on('log', gutil.log);
     return bundle();
 });
+
+gulp.task('doc', shell.task([
+    'node ./node_modules/jsdoc/jsdoc src -r -d docs -R README.md'
+]));
