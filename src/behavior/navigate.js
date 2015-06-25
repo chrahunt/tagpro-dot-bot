@@ -130,11 +130,12 @@ CalculatePath.prototype._postProcessPath = function(path) {
     path.shift();
   }
   var spikes = this.bot.game.getspikes();
+  var params = this.bot.parameters.nav;
   // The additional buffer to give the obstacles.
-  var buffer = this.bot.spike_buffer || 20;
+  var buffer = params.spike_buffer || 15;
   // The threshold for determining points which are 'close' to
   // obstacles.
-  var threshold = this.bot.spike_threshold || 60;
+  var threshold = params.spike_threshold || 35;
   var spikesByPoint = new Map();
   path.forEach(function(point) {
     var closeSpikes = [];
@@ -179,7 +180,9 @@ CalculatePath.prototype._postProcessPath = function(path) {
  */
 function FollowPath(bot, path) {
   CompositeGoal.apply(this, arguments);
-  this.path = path;
+  this.original_path = path;
+  this.bot.setState("original_path", this.original_path);
+  this.path = this.original_path.slice();
   this.reactivate_threshold = 20;
 }
 
@@ -197,6 +200,7 @@ FollowPath.prototype.activate = function() {
 
   // try to navigate to front of path.
   if (destination) {
+    this.bot.setState("next_path", this.path);
     if (this.subgoals.length > 0) {
       var subgoal = this.subgoals[0];
       if (subgoal.point && subgoal.point.neq(destination)) {
@@ -237,16 +241,20 @@ FollowPath.prototype._nextSubgoal = function(point) {
 FollowPath.prototype.process = function() {
   this.activateIfInactive();
   if (this.iteration == this.reactivate_threshold) {
-    this.status = GoalStatus.inactive;
+    this.activate();
   } else {
     this.iteration++;
     if (this.status !== GoalStatus.failed && this.status !== GoalStatus.completed) {
       var status = this.processSubgoals();
       // Add next point onto path if possible.
       if (status == GoalStatus.completed) {// && this.path.length !== 2) {
-        this.activate();
+        if (this.path.length === 1) {
+          this.status = GoalStatus.completed;
+        } else {
+          this.activate();
+        }
       } else {
-
+        this.status = status;
       }
     }
   }
@@ -269,14 +277,16 @@ FollowPath.prototype._getNextPoint = function(limit) {
   } else {
     limit = Math.min(limit, this.path.length);
   }
-  if (!this.path)
+  if (!this.path || this.path.length === 0)
     return null;
+  var self = this;
 
-  var goal;
-  var path = this.path.slice();
-  // Find next location to seek out in path.
-  if (path.length > 0) {
-    var me = this.bot.game.location();
+  // Find first visible point, return it or falsy if not found.
+  // If found, alters path.
+  function findFirstVisible(path) {
+    var goal;
+    // Find next location to seek out in path.
+    var me = self.bot.game.location();
     var anyVisible = false;
     var last_index = 0;
 
@@ -284,7 +294,7 @@ FollowPath.prototype._getNextPoint = function(limit) {
     // location.
     for (var i = 0; i < limit; i++) {
       var point = path[i];
-      if (this.bot.navmesh.checkVisible(me, point)) {
+      if (self.bot.navmesh.checkVisible(me, point)) {
         goal = point;
         last_index = i;
         anyVisible = true;
@@ -292,28 +302,36 @@ FollowPath.prototype._getNextPoint = function(limit) {
     }
 
     if (anyVisible) {
-      last_index = Math.min(last_index + 1, path.length - 1);
-      path = path.slice(last_index);
-      if (path.length == 1) {
-        goal = path[0];
-        // Finished if within this distance of the last point on the
-        // path.
-        if (me.dist(goal) < 20) {
-          goal = false;
-        }
-      }
+      last_index = Math.min(last_index, path.length - 1);
+      path.splice(0, last_index);
     } else {
       goal = null;
     }
-  } else {
-    goal = false;
+
+    // Update bot state.
+    if (goal) {
+      this.path = path;
+    }
+    return goal;  
   }
 
-  // Update bot state.
-  if (goal) {
+  // Try path first.
+  var path = this.path.slice();
+  var goal = findFirstVisible(path);
+  if (!goal) {
+    // Try original path next.
+    path = this.original_path.slice();
+    goal = findFirstVisible(path);
+    if (!goal) {
+      return null;
+    } else {
+      this.path = path;
+      return goal;
+    }
+  } else {
     this.path = path;
+    return goal;
   }
-  return goal;
 };
 
 /**
@@ -324,6 +342,10 @@ FollowPath.prototype._getNextPoint = function(limit) {
  */
 FollowPath.prototype._isLastPoint = function(point) {
   return point == this.path[this.path.length - 1];
+};
+
+FollowPath.prototype.terminate = function() {
+  this.removeAllSubgoals();
 };
 
 /**
@@ -361,7 +383,7 @@ SeekToPoint.prototype.process = function() {
   var position = this.bot.game.location();
   // Check for point visibility.
   // Check if at position.
-  if (position.dist(this.point) < 20) {
+  if (position.dist(this.point) < 5) {
     this.status = GoalStatus.completed;
     //this.bot.setState("target", false);
   } else if (!this.bot.navmesh.checkVisible(position, this.point)) {
@@ -409,7 +431,7 @@ ArriveToPoint.prototype.process = function() {
   var position = this.bot.game.location();
   // Check for point visibility.
   // Check if at position.
-  if (position.dist(this.point) < 20) {
+  if (position.dist(this.point) < 10) {
     this.status = GoalStatus.completed;
     this.bot.setState("target", false);
   } else if (!this.bot.navmesh.checkVisible(position, this.point)) {

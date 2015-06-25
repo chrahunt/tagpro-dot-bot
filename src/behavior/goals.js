@@ -17,6 +17,14 @@ var GoalStatus = exports.GoalStatus = {
   waiting: 5
 };
 
+var StatusStrings = {
+  1: "inactive",
+  2: "active",
+  3: "completed",
+  4: "failed",
+  5: "waiting"
+};
+
 /**
  * A Goal represents a specific task to be completed.
  * @alias module:behavior/goals.Goal
@@ -98,6 +106,11 @@ Goal.prototype.isCompleted = function() {
 
 Goal.prototype.hasFailed = function() {
   return this.status == GoalStatus.failed;
+};
+
+Goal.prototype.print = function() {
+  var format = "%s (%s)";
+  return util.format(format, this.constructor.name, StatusStrings[this.status]);
 };
 
 /**
@@ -205,4 +218,24 @@ CompositeGoal.prototype.isFirstSubgoal = function(goalType) {
  */
 CompositeGoal.prototype.terminate = function() {
   this.removeAllSubgoals();
+};
+
+CompositeGoal.prototype.process = function() {
+  this.status = this.processSubgoals();
+  return this.status;
+};
+
+/**
+ * @override
+ */
+CompositeGoal.prototype.print = function() {
+  var strings = [];
+  var format = "%s (%s)";
+  // Own.
+  strings.push(util.format(format, this.constructor.name, StatusStrings[this.status]));
+  var next = this.subgoals.length > 0 && this.subgoals[0];
+  if (next) {
+    strings.push(next.print());
+  }
+  return strings.join(" > ");
 };
