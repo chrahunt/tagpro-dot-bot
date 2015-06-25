@@ -34,7 +34,7 @@ var drawings = [
       }
       this.bot.navmesh.onUpdate(function (polys) {
         this.draw.updateBackground("mesh", polys);
-      });
+      }.bind(this));
       this.draw.updateBackground("mesh", this.bot.navmesh.polys);
     },
     update: function () {},
@@ -83,6 +83,60 @@ var drawings = [
     },
     hide: function () {
       this.draw.hidePoint("next_point");
+    }
+  }, { // Paths.
+    init: function (bot, draw) {
+      this.bot = bot;
+      this.draw = draw;
+      this.original_path_c = new PIXI.Graphics();
+      this.path_c = new PIXI.Graphics();
+      tagpro.renderer.layers.background.addChild(this.original_path_c);
+      tagpro.renderer.layers.background.addChild(this.path_c);
+    },
+    update: function () {
+      var path = this.bot.getState("next_path");
+      var original_path = this.bot.getState("original_path");
+      if (!this.hasOwnProperty("next_path") || this.next_path !== path) {
+        this.next_path = path;
+        if (this.next_path) {
+          this._drawPath(this.next_path, this.path_c, 0x0000ee);
+        } else {
+          this.path_c.clear();
+          this.path_c.visible = false;
+        }
+      }
+      if (!this.hasOwnProperty("original_path") || this.original_path !== original_path) {
+        this.original_path = original_path;
+        if (this.original_path) {
+          this._drawPath(this.original_path, this.original_path_c, 0x00ff00);
+        } else {
+          this.original_path_c.clear();
+          this.original_path_c.visible = false;
+        }
+      }
+    },
+    _drawPath: function (path, container, color) {
+      container.clear();
+      container.lineStyle(1, color, 1);
+      container.beginFill(color, 1);
+      for (var i = 0; i < path.length; i++) {
+        var point = path[i];
+        container.drawCircle(point.x, point.y, 3);
+        if (i < path.length - 1) {
+          var next = path[i + 1];
+          container.moveTo(point.x, point.y);
+          container.lineTo(next.x, next.y);
+        }
+      }
+      container.endFill();
+    },
+    hide: function () {
+      this.original_path_c.visible = false;
+      this.path_c.visible = false;
+    },
+    show: function () {
+      this.original_path_c.visible = true;
+      this.path_c.visible = true;
     }
   }, { // Steering cost vectors.
     init: function (bot, draw) {
