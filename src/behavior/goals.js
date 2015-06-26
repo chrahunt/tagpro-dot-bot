@@ -40,7 +40,9 @@ exports.Goal = Goal;
 /**
  * Called to activate the goal. This is where any necessary state is set.
  */
-Goal.prototype.activate = function() {};
+Goal.prototype.activate = function() {
+  console.warn("Goal has not implemented activate.");
+};
 
 /**
  * Called to continue processing the goal. This can directly change bot
@@ -55,7 +57,9 @@ Goal.prototype.process = function() {
  * Called to clean up any state that may have been set by the goal
  * before its execution is terminated.
  */
-Goal.prototype.terminate = function() {};
+Goal.prototype.terminate = function() {
+  console.warn("Goal has not implemented terminate.");
+};
 
 /**
  * This function allows passing a message to a goal to be handled in

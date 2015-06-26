@@ -43,6 +43,9 @@ Brain.prototype.process = function() {
   this.activateIfInactive();
   var status = this.processSubgoals();
   if (status == GoalStatus.completed || status == GoalStatus.failed) {
+    if (status == GoalStatus.failed) {
+      console.warn("Brain received failure notification. Tree state: %s.", this.print());
+    }
     this.status = GoalStatus.inactive;
   }
   return this.status;
@@ -129,7 +132,7 @@ Brain.prototype.think = function() {
 /**
  * Print current state of behavior tree.
  */
-Brain.prototype.print = function() {
+/*Brain.prototype.print = function() {
   var strings = [];
   var format = "%s (%d)";
   strings.push(util.format(format, this.constructor.name, this.status));
@@ -139,4 +142,4 @@ Brain.prototype.print = function() {
     next = next.subgoals && next.subgoals.length > 0 && next.subgoals[0];
   }
   console.log(strings.join(" > "));
-};
+};*/

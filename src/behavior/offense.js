@@ -5,7 +5,7 @@ var Goal = require('./goals').Goal,
 var Point = require('../geometry').Point;
 
 var NavigateToPoint = require('./navigate').NavigateToPoint;
-var GetPowerup = require('./powerup');
+var GetPowerup = require('./powerup').GetPowerup;
 
 /**
  * @module
@@ -48,11 +48,12 @@ Offense.prototype.process = function() {
   var status = this.processSubgoals();
 
   if (status == GoalStatus.completed) {
+    console.log("Goal was completed, doing activation.");
+    console.log(this.print());
     this.activate();
   } else {
     this.status = status;
   }
-  //console.log("Offense status: %s.", this.status);
   return this.status;
 };
 
@@ -113,4 +114,21 @@ Offense.prototype.handleMessage = function(msg) {
     }
   }
   return this.forwardToFirstSubgoal(msg);
+};
+
+function SetUpForGrab(bot) {
+  CompositeGoal.apply(this, arguments);
+}
+
+util.inherits(SetUpForGrab, CompositeGoal);
+
+SetUpForGrab.prototype.activate = function(first_argument) {
+  // Consider adjacent 
+};
+
+SetUpForGrab.prototype.valueFunction = function() {
+  var boosts = this.bot.game.boosts();
+  var bombs = this.bot.game.bombs();
+  var powerups = this.bot.game.powerups();
+  
 };

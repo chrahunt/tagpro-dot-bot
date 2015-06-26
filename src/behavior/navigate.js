@@ -183,7 +183,6 @@ function FollowPath(bot, path) {
   this.original_path = path;
   this.bot.setState("original_path", this.original_path);
   this.path = this.original_path.slice();
-  this.reactivate_threshold = 20;
 }
 
 util.inherits(FollowPath, CompositeGoal);
@@ -194,7 +193,6 @@ util.inherits(FollowPath, CompositeGoal);
  */
 FollowPath.prototype.activate = function() {
   this.status = GoalStatus.active;
-  this.iteration = 0;
   // Get furthest visible point along path.
   var destination = this._getNextPoint();
 
@@ -236,26 +234,24 @@ FollowPath.prototype._nextSubgoal = function(point) {
 
 /**
  * Follows the path.
- * @return {GoalStatus} [description]
+ * @return {GoalStatus}
  */
 FollowPath.prototype.process = function() {
   this.activateIfInactive();
-  if (this.iteration == this.reactivate_threshold) {
+  if (this._canSeeNextPoint()) {
     this.activate();
-  } else {
-    this.iteration++;
-    if (this.status !== GoalStatus.failed && this.status !== GoalStatus.completed) {
-      var status = this.processSubgoals();
-      // Add next point onto path if possible.
-      if (status == GoalStatus.completed) {// && this.path.length !== 2) {
-        if (this.path.length === 1) {
-          this.status = GoalStatus.completed;
-        } else {
-          this.activate();
-        }
+  }
+  if (this.status !== GoalStatus.failed && this.status !== GoalStatus.completed) {
+    var status = this.processSubgoals();
+    // Add next point onto path if possible.
+    if (status == GoalStatus.completed) {
+      if (this.path.length === 1) {
+        this.status = GoalStatus.completed;
       } else {
-        this.status = status;
+        this.activate();
       }
+    } else {
+      this.status = status;
     }
   }
 
@@ -342,6 +338,17 @@ FollowPath.prototype._getNextPoint = function(limit) {
  */
 FollowPath.prototype._isLastPoint = function(point) {
   return point == this.path[this.path.length - 1];
+};
+
+FollowPath.prototype._canSeeNextPoint = function() {
+  if (this.path.length > 1) {
+    var me = this.bot.game.location();
+    var nextPoint = this.path[1];
+    if (this.bot.navmesh.checkVisible(me, nextPoint)) {
+      return true;
+    }
+  }
+  return false;
 };
 
 FollowPath.prototype.terminate = function() {
