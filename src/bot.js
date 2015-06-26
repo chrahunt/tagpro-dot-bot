@@ -32,7 +32,8 @@ var Bot = function(gamestate, logger) {
   this.state = {
     position: "offense",
     control: "automatic",
-    enemies: false // ids of players to be avoided.
+    enemies: false, // ids of players to be avoided.
+    disabled: false
   };
 
   this.initialized = false;
@@ -71,7 +72,13 @@ Bot.prototype.init = function() {
   var events = ["boost", "dead", "alive", "grab", "cap"];
   events.forEach(function (event) {
     this.game.addPlayerListener(event, function () {
-      this.touch(event);
+      if (typeof event == "string") {
+        this.touch({
+          name: event
+        });
+      } else {
+        this.touch(event);
+      }
     }.bind(this));
   }, this);
 
@@ -121,14 +128,13 @@ Bot.prototype.initializeParameters = function() {
 Bot.prototype.processMap = function(map) {
   this.navmesh = new NavMesh(map, this.logger);
 
-  // Whether the navigation mesh has been updated.
-  this.navUpdate = false;
-
   // Update navigation mesh visualization and set flag for
   // sense function to pass message to brain.
   this.navmesh.onUpdate(function(polys) {
     this.logger.log("bot:info", "Navmesh updated.");
-    this.navUpdate = true;
+    this.touch({
+      name: "nav_update"
+    });
   }.bind(this));
 
   // Add tile id of opposite team tile to navmesh impassable
@@ -176,22 +182,6 @@ Bot.prototype.update = function() {
  */
 Bot.prototype.sense = function() {
   var self = this.game.player();
-
-  // Navmesh updated.
-  if (this.navUpdate) {
-    this.brain.handleMessage("navUpdate");
-    this.navUpdate = false;
-  }
-  // Defense/Offense position changed.
-  if (this.state.last_position && this.state.last_position !== this.state.position) {
-    this.brain.handleMessage("positionChange");
-  }
-  this.state.last_position = this.state.position;
-  // Manual position changed
-  if (this.state.manual_target && this.state.last_manual_target !== this.state.manual_target) {
-    this.brain.handleMessage("manual_target_changed");
-  }
-  this.state.last_manual_target = this.state.manual_target;
   while (this.sense_queue.length > 0) {
     var event = this.sense_queue.shift();
     this.brain.handleMessage(event);
@@ -205,7 +195,9 @@ Bot.prototype.sense = function() {
  */
 Bot.prototype.move = function() {
   this.desired_vector = this.steerer.steer(this.state);
-  this.mover.move(this.desired_vector);
+  if (!this.state.disabled) {
+    this.mover.move(this.desired_vector);
+  }
 };
 
 /**
@@ -219,12 +211,27 @@ Bot.prototype.move = function() {
  *   })
  */
 Bot.prototype.setState = function(name, value) {
+  var self = this;
+  // Handle any sense updates needed.
+  function handleSense(name, value) {
+    if (name == "position") {
+      self.touch({
+        name: "position_change"
+      });
+    } else if (name == "manual_target") {
+      self.touch({
+        name: "manual_target_changed"
+      });
+    }
+  }
   if (typeof name == "object") {
     var obj = name;
     for (var prop in obj) {
+      handleSense(prop, obj[prop]);
       this.state[prop] = obj[prop];
     }
   } else {
+    handleSense(name, value);
     this.state[name] = value;
   }
 };
@@ -290,6 +297,7 @@ Bot.prototype.pause = function() {
     }
   }.bind(this), 20);
 };
+
 /**
  * Starts the bot.
  */

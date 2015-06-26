@@ -58,11 +58,11 @@ ManualControl.prototype.process = function() {
  * @param {*} message
  */
 ManualControl.prototype.handleMessage = function(msg) {
-  if (msg == "manual_target_changed") {
+  if (msg.name == "manual_target_changed") {
     this.terminate();
     this.status = GoalStatus.inactive;
     return true;
-  } else if (msg == "boosted") {
+  } else if (msg.name == "boosted") {
     this.terminate();
     this.status = GoalStatus.inactive;
     return true;
@@ -142,7 +142,7 @@ Boost.prototype.process = function() {
  * @return {boolean} - Whether the message was handled.
  */
 Boost.prototype.handleMessage = function(msg) {
-  if (msg === "boost") {
+  if (msg.name === "boost") {
     this.status = GoalStatus.completed;
     this.terminate();
     console.log("Got info about boost, all done.");

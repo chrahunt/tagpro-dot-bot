@@ -17,10 +17,9 @@ var NavigateToPoint = require('./navigate').NavigateToPoint;
  * @param {Bot} bot - The bot
  * @param {Powerup} powerup - The powerup information.
  */
-function GetPowerup(bot, powerup) {
+function GetPowerup(bot, id) {
   CompositeGoal.apply(this, arguments);
-  this.id = powerup.id;
-  this.powerup = powerup;
+  this.id = id;
 }
 
 exports.GetPowerup = GetPowerup;
@@ -28,17 +27,19 @@ util.inherits(GetPowerup, CompositeGoal);
 
 GetPowerup.prototype.activate = function() {
   this.status = GoalStatus.active;
+  this.powerup = this.bot.game.powerupTracker.getPowerup(this.id);
   if (this.powerup.present) {
     console.log("Going after a present powerup.");
-    this.addSubgoal(new GetSpawnedPowerup(this.bot, this.powerup));
+    this.addSubgoal(new GetSpawnedPowerup(this.bot, this.id));
   } else {
     console.log("Going after a respawning powerup.");
-    this.addSubgoal(new GetRespawningPowerup(this.bot, this.powerup));
+    this.addSubgoal(new WaitForRespawningPowerup(this.bot, this.id));
+    this.addSubgoal(new GetSpawnedPowerup(this.bot, this.id));
   }
 };
 
 GetPowerup.prototype.process = function() {
-  console.log("Processing GetPowerup.");
+  //console.log("Processing GetPowerup.");
   this.activateIfInactive();
   this.status = this.processSubgoals();
   if (this.status === GoalStatus.completed) {
@@ -52,11 +53,10 @@ GetPowerup.prototype.process = function() {
  * @param {Bot} bot - The bot.
  * @param {Powerup} powerup
  */
-function GetSpawnedPowerup(bot, powerup) {
+function GetSpawnedPowerup(bot, id) {
   CompositeGoal.apply(this, arguments);
   console.log("GetSpawnedPowerup constructor.");
-  this.id = powerup.id;
-  this.powerup = powerup;
+  this.id = id;
 }
 
 util.inherits(GetSpawnedPowerup, CompositeGoal);
@@ -64,26 +64,19 @@ util.inherits(GetSpawnedPowerup, CompositeGoal);
 GetSpawnedPowerup.prototype.activate = function() {
   this.status = GoalStatus.active;
   console.log("Activating GetSpawnedPowerup.");
-  // Go directly to the powerup.
-  var loc = new Point(this.powerup.x, this.powerup.y);
-  var destination = loc.mul(40).add(20);
-  this.addSubgoal(new NavigateToPoint(this.bot, destination));
-};
-
-GetSpawnedPowerup.prototype.handleMessage = function(msg) {
-  if (typeof msg == "object") {
-    if (msg.name == "powerup_grabbed" && msg.id == this.id) {
-      console.log("Got message, setting as complete.");
-      // Grabbed powerup, complete.
-      this.status = GoalStatus.completed;
-      return true;
-    }
+  this.powerup = this.bot.game.powerupTracker.getPowerup(this.id);
+  if (this.powerup.present) {
+    // Go directly to the powerup.
+    var loc = new Point(this.powerup.x, this.powerup.y);
+    var destination = loc.mul(40).add(20);
+    this.addSubgoal(new NavigateToPoint(this.bot, destination));
+  } else {
+    this.status = GoalStatus.failed;
   }
-  return this.forwardToFirstSubgoal(msg);
 };
 
 GetSpawnedPowerup.prototype.process = function() {
-  console.log("Processing GetSpawnedPowerup.");
+  //console.log("Processing GetSpawnedPowerup.");
   this.activateIfInactive();
   if (this.status !== GoalStatus.completed) {
     this.status = this.processSubgoals();
@@ -93,27 +86,39 @@ GetSpawnedPowerup.prototype.process = function() {
   return this.status;
 };
 
+GetSpawnedPowerup.prototype.handleMessage = function(msg) {
+  if (msg.name == "powerup_grabbed" && msg.id == this.id) {
+    console.log("Got powerup grab message, setting as complete.");
+    // Grabbed powerup, complete.
+    this.status = GoalStatus.completed;
+    return true;
+  }
+  return this.forwardToFirstSubgoal(msg);
+};
+
 /**
  * Get a powerup that is respawning.
  * @param {Bot} bot
  * @param {Powerup} powerup
  */
-function GetRespawningPowerup(bot, powerup) {
+function WaitForRespawningPowerup(bot, id) {
   CompositeGoal.apply(this, arguments);
-  this.id = powerup.id;
-  this.powerup = powerup;
+  this.id = id;
 }
 
-util.inherits(GetRespawningPowerup, CompositeGoal);
+util.inherits(WaitForRespawningPowerup, CompositeGoal);
 
-GetRespawningPowerup.prototype.activate = function() {
+WaitForRespawningPowerup.prototype.activate = function() {
   this.status = GoalStatus.active;
+  this.powerup = this.bot.game.powerupTracker.getPowerup(this.id);
   if (!this.powerup.present) {
     var loc = new Point(this.powerup.x, this.powerup.y);
 
     // Wait next to the powerup.
     // Get adjacent tile.
     var tiles = this.bot.game.getTraversableTilesNextTo(this.powerup);
+    console.log("Tiles next to powerup:");
+    console.log(tiles);
     var myLocation = this.bot.game.location();
     var shortest = Infinity;
     var selected = false;
@@ -133,28 +138,30 @@ GetRespawningPowerup.prototype.activate = function() {
       this.status = GoalStatus.failed;
     }
   } else {
-    this.addSubgoal(new GetSpawnedPowerup(this.bot, this.powerup));
+    this.status = GoalStatus.completed;
   }
 };
 
-GetRespawningPowerup.prototype.process = function() {
+WaitForRespawningPowerup.prototype.process = function() {
   this.activateIfInactive();
 
-  if (this.status !== GoalStatus.failed) {
-    this.status = this.processSubgoals();
+  if (this.status !== GoalStatus.failed && this.status !== GoalStatus.completed) {
+    var status = this.processSubgoals();
+    // Only update status if not completed.
+    if (status !== GoalStatus.completed) {
+      this.status = status;
+    } else {
+      this.status = GoalStatus.waiting;
+    }
   }
 
   return this.status;
 };
 
-GetRespawningPowerup.prototype.handleMessage = function(msg) {
-  if (typeof msg == "object") {
-    if (msg.name == "powerup_spawned" && msg.id == this.id) {
-      // Spawned, grab powerup.
-      this.powerup.present = true;
-      this.status = GoalStatus.inactive;
-      return true;
-    }
+WaitForRespawningPowerup.prototype.handleMessage = function(msg) {
+  if (msg.name == "powerup_spawned" && msg.id == this.id) {
+    this.status = GoalStatus.completed;
+    return true;
   }
   return this.forwardToFirstSubgoal(msg);
 };

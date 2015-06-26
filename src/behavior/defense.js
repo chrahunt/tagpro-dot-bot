@@ -260,24 +260,3 @@ function ContainmentDefense(bot) {
 }
 
 util.inherits(ContainmentDefense, CompositeGoal);
-
-/**
- * Defense strategy to use when flag is out-of-base.
- */
-function OffensiveDefense(bot) {
-  CompositeGoal.apply(this, arguments);
-}
-
-util.inherits(OffensiveDefense, CompositeGoal);
-
-OffensiveDefense.prototype.activate = function() {
-  this.status = GoalStatus.active;
-};
-
-OffensiveDefense.prototype.process = function() {
-  this.activateIfInactive();
-
-  this.status = this.processSubgoals();
-
-  return this.status;
-};

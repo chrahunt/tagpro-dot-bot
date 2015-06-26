@@ -46,6 +46,7 @@ var PowerupTracker = function(gamestate) {//socket, map, players, id) {
     grab: []
   };
   this.powerups = [];
+  this.powerupsById = {};
   this.tileCache = {};
   this.stateCache = {};
   this.check = null;
@@ -138,6 +139,7 @@ PowerupTracker.prototype.init = function() {
       powerup.id = Point.toString(powerup);
       this.powerups.push(powerup);
       this.tileCache[powerup.id] = tile;
+      this.powerupsById[powerup.id] = powerup;
     }, this);
   }, this);
   this.reconcilePowerups();
@@ -164,6 +166,10 @@ PowerupTracker.prototype.init = function() {
 PowerupTracker.prototype.getPowerups = function() {
   this.reconcilePowerups();
   return this.powerups.slice();
+};
+
+PowerupTracker.prototype.getPowerup = function(id) {
+  return this.powerupsById[id];
 };
 
 /**
@@ -509,4 +515,7 @@ PowerupTracker.prototype.reconcilePowerups = function() {
     }
   }, this);
   this.powerups = newPowerups;
+  this.powerups.forEach(function (powerup) {
+    this.powerupsById[powerup.id] = powerup;
+  }, this);
 };

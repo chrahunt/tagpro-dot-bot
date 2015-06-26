@@ -1,4 +1,5 @@
 var PowerupTracker = require('./powerup-tracker');
+var physics = require('./physics');
 
 /**
  * @module gamestate
@@ -28,7 +29,7 @@ function GameState(tagpro) {
   };
   this._initialized = false;
   this.onInitialized(this.init.bind(this));
-};
+}
 
 module.exports = GameState;
 
@@ -175,6 +176,25 @@ GameState.prototype.addPlayerListener = function(id, name, callback) {
  */
 GameState.prototype.addPowerupListener = function(callback) {
   this.listeners.powerup.push(callback);
+};
+
+/**
+ * Get list of powerups, same as is sent in message.
+ */
+GameState.prototype.getPowerups = function() {
+  var powerupData = this.powerupTracker.getPowerups();
+  var powerups = {
+    respawning: powerupData.filter(function (powerup) {
+      return powerup.present_known && !powerup.present && powerup.taken_time_known;
+    }),
+    unknown: powerupData.filter(function (powerup) {
+      return !powerup.present_known || (!powerup.present && !powerup.taken_time_known);
+    }),
+    spawned: powerupData.filter(function (powerup) {
+      return powerup.present_known && powerup.present;
+    })
+  };
+  return powerups;
 };
 
 /**
@@ -446,6 +466,15 @@ GameState.prototype.pVelocity = function(id, ahead, timeInSteps) {
 };
 
 /**
+ * Given a player id, get the steps required to stop along each axis.
+ * @param {[type]} first_argument [description]
+ * @return {[type]} [description]
+ */
+GameState.prototype.stoppingDistance = function(id) {
+  if (typeof id == "undefined") id = this.tagpro.playerId;
+  var player = this.player(id);
+};
+/**
  * Given a time in ms, return the number of steps needed to represent
  * that time.
  * @private
@@ -574,15 +603,6 @@ GameState.prototype.getspikes = function() {
       return result.location;
     });
     this.spikes = spikes;
-    // Debugging, draw circle used for determining spike intersection.
-    /*this.spikes.forEach(function(spike, i) {
-      this.draw.addCircle(
-        "spike-" + i,
-        this.parameters.steering.avoid.spike_intersection_radius,
-        0xbbbb00
-      );
-      this.draw.updateCircle("spike-" + i, spike);
-    }, this);*/
     return spikes;
   }
 };
@@ -695,7 +715,7 @@ GameState.prototype.getTraversableTilesNextTo = function(loc) {
         continue;
       } else {
         var val = tagpro.map[thisX][thisY];
-        if (bad_tiles.indexOf(val) !== -1) {
+        if (bad_tiles.indexOf(val) === -1) {
           traversableTiles.push(new Point(thisX, thisY));
         }
       }
@@ -715,7 +735,8 @@ GameState.prototype.gameType = function() {
 };
 
 /**
- * Find players that are on the team of the current player.
+ * Find players that are on the team of the current player, including
+ * the current player.
  * @return {Array.<Player>} - The teammates.
  */
 GameState.prototype.teammates = function() {
@@ -797,6 +818,14 @@ GameState.prototype.inBase = function() {
 };
 
 /**
+ * See if current player is within enemy base.
+ */
+GameState.prototype.inEnemyBase = function() {
+  var base = this.enemyBase();
+  return this.playerWithinArea(this.self, base.location, base.radius);
+};
+
+/**
  * Holds information about what is considered the 'base' for the
  * current player. Defines a circular area centered on the current
  * player's flag.
@@ -813,12 +842,19 @@ GameState.prototype.inBase = function() {
  * used for determining the number of players/items in base.
  * @return {Base} - The base location/extent information.
  */
-GameState.prototype.base = function(first_argument) {
+GameState.prototype.base = function() {
   var base = {};
   // Radius used to determine whether something is in-base.
   base.radius = 200;
   base.location = this.findOwnFlag().location;
   return base;
+};
+
+GameState.prototype.enemyBase = function() {
+  return {
+    radius: 200,
+    location: this.findEnemyFlag().location
+  };
 };
 
 /**

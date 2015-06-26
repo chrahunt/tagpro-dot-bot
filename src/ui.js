@@ -68,6 +68,18 @@ UI.prototype.init = function() {
       $(this).text("Start Bot");
     }
   });
+  // Disable the bot's movement capabilities while keeping it's brain
+  // intact.
+  $("#bot-disable").click(function (e) {
+    var disabled = self.bot.getState("disabled");
+    if (disabled) {
+      self.bot.setState("disabled", false);
+      $(this).text("Disable Bot");
+    } else {
+      self.bot.setState("disabled", true);
+      $(this).text("Enable Bot");
+    }
+  });
   $("#bot-pause").click(function () {
     if (!self.bot.stopped) {
       self.bot.pause();

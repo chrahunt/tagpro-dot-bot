@@ -59,27 +59,23 @@ Brain.prototype.process = function() {
  * @override
  */
 Brain.prototype.handleMessage = function(msg) {
-  if (msg == "dead") {
+  if (msg.name == "dead") {
     this.terminate();
     this.status = GoalStatus.inactive;
     this.bot.setState("dangerous_enemies", false); // dead have no enemies
     this.alive = false;
     return true;
-  } else if (msg == "alive") {
+  } else if (msg.name == "alive") {
     this.alive = true;
     return true;
-  } else if (msg == "positionChange") {
+  } else if (msg.name == "position_change") {
     this.terminate();
     this.status = GoalStatus.inactive;
     return true;
-  } else if (typeof msg == "object") {
-    // Handle powerup messages.
-    //console.log("Received powerup message!");
-    //console.log(msg);
   } else {
     // Handle messages that impact steering obstacles, but still forward
     // to first subgoal.
-    if (msg == "grab") {
+    if (msg.name == "grab") {
       // Everyone on the other team is an enemy.
       var enemies = this.bot.game.enemies().map(function (player) {
         return player.id;
@@ -128,18 +124,3 @@ Brain.prototype.think = function() {
     }
   }
 };
-
-/**
- * Print current state of behavior tree.
- */
-/*Brain.prototype.print = function() {
-  var strings = [];
-  var format = "%s (%d)";
-  strings.push(util.format(format, this.constructor.name, this.status));
-  var next = this.subgoals.length > 0 && this.subgoals[0];
-  while (next) {
-    strings.push(util.format(format, next.constructor.name, next.status));
-    next = next.subgoals && next.subgoals.length > 0 && next.subgoals[0];
-  }
-  console.log(strings.join(" > "));
-};*/

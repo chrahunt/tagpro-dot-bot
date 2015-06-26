@@ -21,7 +21,9 @@ var Steerer = function(state) {
   };
   this.parameters.avoid = {
     max_see_ahead: 300, // Time in ms to look ahead for a collision.
-    assumed_difference: 35,
+    int_see_ahead: 100, // Smaller time to look for a collision.
+    current_location: 40,
+    assumed_difference: 65,
     spike_intersection_radius: this.gamestate.parameters.game.radius.spike +
       this.gamestate.parameters.game.radius.ball
   };
@@ -171,17 +173,21 @@ Steerer.prototype.inverseAvoid = function(vectors, obstacles) {
 
   // For determining how many ms to look ahead for the location to use
   // as the basis for seeing the impact a direction will have.
+  var BASIS = params.current_location;
   var LOOK_AHEAD = params.max_see_ahead;
+  var MED_LOOK_AHEAD = params.int_see_ahead;
 
   // For determining how much difference heading towards a single direction
   // will make.
   var DIR_LOOK_AHEAD = params.assumed_difference;
 
   // Ray with current position as basis.
-  var position = this.gamestate.location();
+  var position = this.gamestate.pLocation(BASIS);
   // look ahead 20ms
   var ahead = this.gamestate.pLocation(LOOK_AHEAD);
+  var med_ahead = this.gamestate.pLocation(MED_LOOK_AHEAD);
   var ahead_distance = ahead.sub(position).len();
+  var med_ahead_distance = med_ahead.sub(position).len();
 
   var relative_location = ahead.sub(position);
 

@@ -56,11 +56,11 @@ NavigateToPoint.prototype.process = function() {
 };
 
 /**
- * Handles navUpdate message indicating that the navigation mesh has
- * been updated.
+ * Handles message with name 'nav_update' indicating that the
+ * navigation mesh has been updated.
  */
 NavigateToPoint.prototype.handleMessage = function(msg) {
-  if (msg == "navUpdate") {
+  if (msg.name == "nav_update") {
     // Inactivate so we find a different path.
     this.status = GoalStatus.inactive;
     return true;
