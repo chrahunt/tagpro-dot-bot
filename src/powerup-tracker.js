@@ -484,7 +484,7 @@ PowerupTracker.prototype.reconcilePowerups = function() {
       counts.events[event.id] = 0;
     });
   } while (inferred);
-
+  /*
   // Update state after that?
   // At this point the powerups with present_known set to true are those that have been reconciled.
   var knownPups = newPowerups.filter(function (powerup) {

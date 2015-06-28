@@ -1,6 +1,34 @@
 /**
  * @module overlay
  */
+var Point = require('./geometry').Point;
+var Edge = require('./geometry').Edge;
+
+var Utils = {
+  convertPolyToPIXIPoly: function (poly) {
+    var points = [];
+    for (var i = 0; i < poly.points.length; i++) {
+      points.push(poly.points[i].x, poly.points[i].y);
+    }
+    // Add initial point to end of array to resolve PIXI rendering
+    // issue.
+    points.push(points[0], points[1]);
+    return new PIXI.Polygon(points);
+  },
+  makeText: function (color) {
+    if (typeof color == 'undefined') color = "#FFFFFF";
+    var text = new PIXI.Text("", {
+        font: "bold 10pt Arial",
+        fill: color,
+        stroke: "#000000",
+        strokeThickness: 3,
+        align: "center"
+    });
+    text.anchor = new PIXI.Point(0.5, 0.5);
+    text.visible = false;
+    return text;
+  }
+};
 
 // Various drawings.
 // Drawing has properties init, update, hide, show.
@@ -185,6 +213,228 @@ var drawings = [
     hide: function () {
       this.cost_vector_container.visible = false;
     }
+  }, { // Powerups.
+    init: function (bot, draw) {
+      console.log("Initializing powerup overlay.");
+      this.bot = bot;
+      this.draw = draw;
+      
+      this.powerup_respawn = 60000;
+      var powerups = this.bot.game.powerupTracker.getPowerups();
+      this._initIndicators(powerups);
+      this._initTiles(powerups);
+    },
+    _initIndicators: function (powerups) {
+      // Offset of indicators from side of window.
+      this.indicator_offset = 50;
+      this.indicator_ui = new PIXI.DisplayObjectContainer();
+      tagpro.renderer.layers.ui.addChild(this.indicator_ui);
+      var texture = this._getIndicatorTexture();
+
+      this.indicators = {};
+      powerups.forEach(function (powerup) {
+        var c = new PIXI.Sprite(texture);
+        c.anchor = new PIXI.Point(0.5, 0.5);
+        this.indicator_ui.addChild(c);
+        var t = Utils.makeText();
+        this.indicator_ui.addChild(t);
+        this.indicators[powerup.id] = {
+          container: c,
+          text: t
+        };
+      }, this);
+      $("#viewport").resize(this._onResize.bind(this));
+      this._onResize();      
+    },
+    _initTiles: function (powerups) {
+      this.tile_ui = new PIXI.DisplayObjectContainer();
+      tagpro.renderer.layers.foreground.addChild(this.tile_ui);
+      this.tile_overlays = {};
+      powerups.forEach(function (powerup) {
+        var t = Utils.makeText();
+        this.tile_ui.addChild(t);
+        this.tile_overlays[powerup.id] = {
+          text: t
+        };
+      }, this);
+    },
+    // Function called on viewport resize.
+    _onResize: function () {
+      var viewport = $("#viewport");
+      this.indicator_lines = [];
+      // Top.
+      this.indicator_lines.push(new Edge([
+        this.indicator_offset, this.indicator_offset,
+        viewport.width() - this.indicator_offset, this.indicator_offset
+      ]));
+      // Right.
+      this.indicator_lines.push(new Edge([
+        viewport.width() - this.indicator_offset, this.indicator_offset,
+        viewport.width() - this.indicator_offset, viewport.height() - this.indicator_offset
+      ]));
+      // Bottom.
+      this.indicator_lines.push(new Edge([
+        viewport.width() - this.indicator_offset, viewport.height() - this.indicator_offset,
+        this.indicator_offset, viewport.height() - this.indicator_offset
+      ]));
+      // Left.
+      this.indicator_lines.push(new Edge([
+        this.indicator_offset, viewport.height() - this.indicator_offset,
+        this.indicator_offset, this.indicator_offset
+      ]));
+    },
+    update: function () {
+      var powerups = this.bot.game.powerupTracker.getPowerups();
+      var visible_powerups = [];
+      var offscreen_powerups = [];
+      for (var i = 0; i < powerups.length; i++) {
+        var powerup = powerups[i];
+        // TODO: Limit to tile visibility by player.
+        if (powerup.visible) {
+          visible_powerups.push(powerup);
+        } else {
+          offscreen_powerups.push(powerup);
+        }
+      }
+      visible_powerups.forEach(this._hideIndicator, this);
+      offscreen_powerups.forEach(this._hideTileOverlay, this);
+      this._drawIndicators(offscreen_powerups);
+      this._drawTileOverlays(visible_powerups);
+    },
+    // Draw indicators for off-screen powerups.
+    _drawIndicators: function (powerups) {
+      var scale = tagpro.renderer.gameContainer.scale.x;
+      var gameLocation = Point.fromPointLike(tagpro.renderer.gameContainer).div(-scale);
+      // Convert indicator lines to game coordinates.
+      var indicator_lines = this.indicator_lines.map(function (line) {
+        return line.scale(1 / scale).translate(gameLocation);
+      });
+      var viewport = $("#viewport");
+      var center = new Point(viewport.width() / 2, viewport.height() / 2);
+      // Center in game coordinates.
+      center = center.div(scale).add(gameLocation);
+
+      for (var i = 0; i < powerups.length; i++) {
+        var powerup = powerups[i];
+        var indicator = this.indicators[powerup.id];
+        if (powerup.visible) {
+          indicator.container.visible = false;
+        } else {
+          indicator.container.visible = true;
+          indicator.text.visible = true;
+          
+          var info = {};
+          // World coordinates.
+          var loc = Point.fromPointLike(powerup).mul(40).add(20);
+          // Line pointing to powerup.
+          info.dir = loc.sub(center).normalize();
+          // Line from center to tile.
+          var line = new Edge(center, loc);
+          for (var j = 0; j < indicator_lines.length; j++) {
+            var indicator_line = indicator_lines[j];
+            var intersection = indicator_line.intersection(line);
+            if (intersection) {
+              // Set draw point.
+              info.point = intersection.sub(gameLocation).mul(scale);
+              break;
+            }
+          }
+          if (!info.point) {
+            console.error("Error finding overlay position for powerup indicator.");
+          } else {
+            if (powerup.present_known) {
+              if (powerup.present) {
+                if (powerup.value_known) {
+                  //info.icon = powerup.value;
+                  info.text = "!";
+                } else {
+                  info.text = "!";
+                }
+              } else if (powerup.taken_time_known) {
+                var respawn_time = powerup.taken_time + this.powerup_respawn - Date.now();
+                info.text = (respawn_time / 1e3).toFixed(1);
+              } else {
+                info.text = "?";
+              }
+            } else {
+              info.text = "?";
+            }
+            indicator.container.x = info.point.x;
+            indicator.container.y = info.point.y;
+            indicator.container.rotation = Math.atan2(info.dir.y, info.dir.x);
+            indicator.text.x = info.point.x;
+            indicator.text.y = info.point.y;
+            indicator.text.setText(info.text);
+          }
+        }
+      }
+    },
+    // Get indicator texture for sprite.
+    _getIndicatorTexture: function () {
+      var g = new PIXI.Graphics();
+      g.clear();
+      g.lineStyle(1, 0xffffff, 0.9);
+      var indicator_size = 18;
+      var container_size = indicator_size * 2 + 10 * 2;
+      // Circle.
+      g.beginFill(0xFFFFFF, 0.9);
+      g.drawCircle(container_size / 2, container_size / 2, indicator_size);
+      // Pointer.
+      var triangle_size = 6;
+      var pointer_base = container_size / 2 + indicator_size;
+      g.drawShape(new PIXI.Polygon([
+        pointer_base, container_size / 2 - triangle_size / 2,
+        pointer_base + triangle_size, container_size / 2,
+        pointer_base, container_size / 2 + triangle_size / 2,
+        pointer_base, container_size / 2 - triangle_size / 2,
+      ]));
+      g.endFill();
+      // Invisible line so generated texture is centered on circle.
+      g.lineStyle(0, 0, 0);
+      g.moveTo(10, container_size / 2);
+      g.lineTo(10 - triangle_size, container_size / 2);
+      return g.generateTexture();
+    },
+    // Hide indicator.
+    _hideIndicator: function (powerup) {
+      var indicator = this.indicators[powerup.id];
+      indicator.text.visible = false;
+      indicator.container.visible = false;
+    },
+    // Draw overlays on visible powerups.
+    _drawTileOverlays: function (powerups) {
+      for (var i = 0; i < powerups.length; i++) {
+        var powerup = powerups[i];
+        var text = this.tile_overlays[powerup.id].text;
+        if (powerup.present_known && powerup.present) {
+          text.visible = false;
+          continue;
+        } else {
+          var loc = Point.fromPointLike(powerup).mul(40).add(20);
+          text.visible = true;
+          text.x = loc.x;
+          text.y = loc.y;
+          if (powerup.taken_time_known) {
+            var respawn_time = powerup.taken_time + this.powerup_respawn - Date.now();
+            text.setText((respawn_time / 1e3).toFixed(1));
+          } else {
+            text.setText("?");
+          }
+        }
+      }
+    },
+    // Hide overlay.
+    _hideTileOverlay: function (powerup) {
+      var tile_overlay = this.tile_overlays[powerup.id];
+      tile_overlay.text.visible = false;
+    },
+    show: function () {
+
+    },
+    hide: function () {
+      // Reset so we see state again.
+      this.logged = false;
+    }
   }
 ];
 
@@ -214,7 +464,7 @@ Overlay.prototype.update = function() {
     return;
   } else {
     requestAnimationFrame(this.update.bind(this));
-    drawings.forEach(function (drawing) {
+    drawings.forEach(function draw(drawing) {
       drawing.update();
     });
   }
@@ -254,7 +504,6 @@ DrawUtils.prototype.init = function() {
   this.vectors = {};
   this.backgrounds = {};
   this.points = {};
-  this.circles = {};
 
   // Guard against properties not being created.
   tagpro.renderer.updatePlayer(this.self);
@@ -323,32 +572,6 @@ DrawUtils.prototype.updateBackground = function(name, polys) {
 };
 
 /**
- * Add circle to be drawn on the screen.
- */
-DrawUtils.prototype.addCircle = function(name, radius, color) {
-  var circle = {
-    color: color,
-    radius: radius,
-    container: new PIXI.Graphics()
-  };
-  tagpro.renderer.layers.foreground.addChild(circle.container);
-  this.circles[name] = circle;
-};
-
-DrawUtils.prototype.updateCircle = function(name, point) {
-  this.circles[name].center = point;
-  this._drawCircle(this.circles[name]);
-};
-
-DrawUtils.prototype._drawCircle = function(circle) {
-  var c = circle;
-
-  c.container.clear();
-  c.container.lineStyle(1, c.color, 1);
-  c.container.drawCircle(c.center.x, c.center.y, c.radius);
-};
-
-/**
  * Represents a point to be drawn on the screen, along with information
  * about how to draw it.
  * @typedef PointInfo
@@ -401,16 +624,6 @@ DrawUtils.prototype.addPoint = function(name, color, layer) {
 DrawUtils.prototype.updatePoint = function(name, point) {
   this.points[name].point = point;
   this._drawPoint(this.points[name]);
-};
-
-/**
- * Update the location of a set point to be drawn on the screen.
- * @param {string} name - The name of the point to update.
- * @param {Array.<Point>} points - The set of updated points.
- */
-DrawUtils.prototype.updatePoints = function(name, points) {
-  this.points[name].points = points;
-  this._drawPoints(this.points[name]);
 };
 
 DrawUtils.prototype.hidePoint = function(name) {
@@ -505,7 +718,7 @@ DrawUtils.prototype._drawBackground = function(background) {
   var bg = background;
 
   var polys = background.polys.map(function(poly) {
-    return this._convertPolyToPixiPoly(poly);
+    return Utils.convertPolyToPIXIPoly(poly);
   }, this);
 
   
@@ -530,36 +743,6 @@ DrawUtils.prototype._drawPoint = function(point) {
   p.container.drawCircle(p.point.x, p.point.y, 3);
   p.container.endFill();
   p.container.visible = true;
-};
-
-/**
- * Draw a set of points, given information about them.
- * @private
- * @param {PointsInfo} points - The points to draw.
- */
-DrawUtils.prototype._drawPoints = function(points) {
-  var p = points;
-
-  p.container.clear();
-  p.container.lineStyle(1, 0x000000, 1);
-  p.container.beginFill(p.color, 1);
-  p.points.forEach(function(point) {
-    p.container.drawCircle(point.x, point.y, 3);
-  });
-  p.container.endFill();
-  p.container.visible = true;
-};
-
-/**
- * @param {Poly} poly
- */
-DrawUtils.prototype._convertPolyToPixiPoly = function(poly) {
-  var point_array = poly.points.reduce(function(values, point) {
-    return values.concat(point.x, point.y);
-  }, []);
-  // Add original point back to point array to resolve Pixi.js rendering issue.
-  point_array = point_array.concat(point_array[0], point_array[1]);
-  return new PIXI.Polygon(point_array);
 };
 
 /**

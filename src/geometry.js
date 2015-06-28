@@ -154,15 +154,23 @@ Point.prototype.clone = function() {
 
 /**
  * Edges are used to represent the border between two adjacent
- * polygons.
+ * polygons. Can be called 2 ways.
  * @constructor
- * @param {Point} p1 - The first point of the edge.
- * @param {Point} p2 - The second point of the edge.
+ * @example <caption>Constructing from Point objects.</caption>
+ *   var e = new Edge(p1, p2)
+ * @example <caption>From an array of values.</caption>
+ *   var e = new Edge([x1, y1, x2, y2])
  */
 Edge = function(p1, p2) {
-  this.p1 = p1;
-  this.p2 = p2;
-  this.center = p1.add(p2.sub(p1).div(2));
+  if (Array.isArray(p1)) {
+    var points = p1;
+    this.p1 = new Point(points[0], points[1]);
+    this.p2 = new Point(points[2], points[3]);
+  } else {
+    this.p1 = p1;
+    this.p2 = p2;
+  }
+  this.center = this.p1.add(this.p2.sub(this.p1).div(2));
   this.points = [this.p1, this.center, this.p2];
 };
 exports.Edge = Edge;
@@ -184,6 +192,52 @@ Edge.prototype.intersects = function(edge) {
   var q1 = edge.p1, q2 = edge.p2;
   if (q1.eq(this.p1) || q1.eq(this.p2) || q2.eq(this.p1) || q2.eq(this.p2)) return false;
   return (this._CCW(this.p1, q1, q2) != this._CCW(this.p2, q1, q2)) && (this._CCW(this.p1, this.p2, q1) != this._CCW(this.p1, this.p2, q2));
+};
+
+/**
+ * Returns point of intersection, or null if the edges do not
+ * intersect.
+ * @param {Edge} edge - The other edge to use.
+ * @return {Point?} - The point of intersection, or null if the edges
+ *   do not intersect or if colinear.
+ */
+Edge.prototype.intersection = function(edge) {
+  var p = this.p1,
+      r = this.p2.sub(this.p1),
+      q = edge.p1,
+      s = edge.p2.sub(edge.p1);
+  var denominator = r.cross(s);
+  if (denominator !== 0) {
+    var t = q.sub(p).cross(s) / denominator,
+        u = q.sub(p).cross(r) / denominator;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+      return p.add(r.mul(t));
+    } else {
+      // Don't intersect.
+      return null;
+    }
+  } else {
+    // Colinear or parallel.
+    return null;
+  }
+};
+
+/**
+ * Translate edge along a vector.
+ * @param {Point} p - The vector to translate along.
+ * @return {Edge} - The translated edge.
+ */
+Edge.prototype.translate = function(p) {
+  return new Edge(this.p1.add(p), this.p2.add(p));
+};
+
+/**
+ * Scale edge by given value.
+ * @param {number} c - Value to scale edge points by.
+ * @return {Edge} - The scaled edge.
+ */
+Edge.prototype.scale = function(c) {
+  return new Edge(this.p1.mul(c), this.p2.mul(c));
 };
 
 /**
