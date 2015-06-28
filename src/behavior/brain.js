@@ -114,7 +114,7 @@ Brain.prototype.think = function() {
       }
     } else {
       // Center flag game.
-      this.bot.chat("I can't play this.");
+      //this.bot.chat("I can't play this.");
     }
   } else if (control == "manual") {
     // Manual control.
