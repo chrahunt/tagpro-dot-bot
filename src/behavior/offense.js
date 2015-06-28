@@ -1,4 +1,6 @@
 var util = require('util');
+var _ = require('lodash');
+
 var Goal = require('./goals').Goal,
     CompositeGoal = require('./goals').CompositeGoal,
     GoalStatus = require('./goals').GoalStatus;
@@ -87,50 +89,165 @@ Offense.prototype.process = function() {
  */
 Offense.prototype.handleMessage = function(msg) {
   if (msg.name == "grab" || msg.name == "cap") {
+    console.log("%s event occurred.", msg.name);
     this.status = GoalStatus.inactive;
     return true;
-  } else if (msg.name == "powerups") {
-    // Don't get another powerup if we're already going after one.
-    if (this.isFirstSubgoal(GetPowerup)) return true;
-    var chosen = false;
-    var type = null;
-
-    var playerLocation = this.bot.game.location();
-    var closest = Infinity;
-    if (!chosen && msg.spawned.length > 0) {
-      var border = 500;
-      msg.spawned.forEach(function (powerup) {
-        var loc = Point.fromPointLike(powerup).mul(40).add(20);
-        var dist = loc.dist(playerLocation);
-        if (dist < closest && dist < border) {
-          type = "spawned";
-          chosen = powerup;
-        }
-      });
-    }
-    // Go get a respawning powerup if we haven't already picked one.
-    if (!chosen && msg.respawning.length > 0) {
-      var respawn_limit = 10e3;
-      var respawn_time = this.bot.game.parameters.game.respawn.powerup;
-      var now = Date.now();
-
-      msg.respawning.forEach(function (powerup) {
-        var dist = Point.fromPointLike(powerup).mul(40).add(20).dist(playerLocation);
-        var time = powerup.taken_time + respawn_time - now;
-        if (time < respawn_limit && dist < closest) {
-          type = "respawning";
-          chosen = powerup;
-        }
-      });
-    }
-    if (chosen) {
-      console.log("Going to go pick up a %s powerup.", type);
-      this.removeAllSubgoals();
-      this.addSubgoal(new GetPowerup(this.bot, chosen.id));
-      return true;
-    }
   }
   return this.forwardToFirstSubgoal(msg);
+};
+
+// Mixin for selecting actions.
+var ActionSelector = {
+  // Given state and weights, get an action.
+  getAction: function(state, weights) {
+    // Map information, contains boost angles.
+    var map_info = this.bot.game.getMapInfo();
+    // Example weights.
+    var weights2 = {
+      havingPowerup: 5,
+      doingBoostGrab: 10,
+      doingBombGrab: 10,
+      waitingOnPowerup: 5,
+      beingOutsideBase: 0,
+      usingBoost: 5,
+      distanceRatio: 0.5
+    };
+    var bot_location = this.bot.game.location();
+    var flag_array_loc = state.target.sub(20).div(40);
+    var flag_tile_id = flag_array_loc.toString();
+    var dist_to_target = this.bot.game.location().dist(state.target);
+    // Boost adjustment.
+    /*var valid_boosts = state.boosts.map(function (boost) {
+      var id = boost.toString();
+      return map_info.boosts[id];
+    });
+    // Rule out boost solutions based on lack of need, i.e. grab.
+    var boost_solutions = [];
+    valid_boosts.forEach(function (boost) {
+      Array.prototype.push.apply(boost_solutions, boost.solutions);
+    });
+    boost_solutions = boost_solutions.filter(function (solution) {
+      // Dismiss if the start of the solution is further from the
+      // target than we are currently.
+      if (Point.fromPointLike(solution.p).dist(state.target) > dist_to_target) {
+        return false;
+      }
+    });
+    var solutions = boost_solutions.map(function (solution) {
+      // Get score for each of the solutions.
+    });
+
+    // Rule out boost solutions based on 
+    var actions = [
+      {
+        type: "boost-powerup", // or -grab or -nav
+        id: "boostid",
+        solution: {},
+        cost: 0
+      }, {
+        type: "powerup-spawned", // or powerup-spawning
+        id: "pupid", // get info when goal executes.
+        cost: 0
+      }, {
+        type: "gettobase",
+        cost: 0
+      }, {
+
+      }
+    ];*/
+
+    // Powerup goals.
+    var powerups = state.powerups;
+    var powerup_actions = [];
+
+    // Make powerup actions.
+    if (powerups.spawned.length > 0) {
+      powerups.spawned.forEach(function (powerup) {
+        var loc = Point.fromPointLike(powerup).mul(40).add(20);
+        powerup_actions.push({
+          type: "spawned",
+          loc: loc,
+          player_distance: loc.dist(bot_location),
+          target_distance: loc.dist(state.target),
+          powerup: powerup
+        });
+      });
+    }
+
+    if (powerups.respawning.length > 0) {
+      var respawn_time = this.bot.game.parameters.game.respawn.powerup;
+      var now = Date.now();
+      powerups.respawning.forEach(function (powerup) {
+        var loc = Point.fromPointLike(powerup).mul(40).add(20);
+        powerup_actions.push({
+          type: "respawning",
+          time: powerup.taken_time + respawn_time - now,
+          loc: loc,
+          powerup: powerup,
+          player_distance: loc.dist(bot_location),
+          target_distance: loc.dist(state.target)
+        });
+      });
+    }
+
+    // Max respawning limit.
+    var respawn_limit = 5e3;
+    var dist_ratio = 2;
+
+    // Rule out powerup actions.
+    powerup_actions = powerup_actions.filter(function (action) {
+      if (action.type == "respawning") {
+        if (action.time > respawn_limit) return false;
+      }
+      if (action.player_distance + action.target_distance > dist_ratio * dist_to_target) {
+        return false;
+      }
+      return true;
+    });
+
+    var goal;
+    if (powerup_actions.length > 0) {
+      // Then go get a powerup.
+      var chosen = powerup_actions.reduce(function (p1, p2) {
+        if (p1.player_distance + p1.target_distance < p2.player_distance + p2.target_distance) {
+          return p1;
+        } else {
+          return p2;
+        }
+      });
+      return new GetPowerup(this.bot, chosen.powerup.id);
+    } else {
+      var destination = this.bot.game.findEnemyFlag();
+      return new NavigateToPoint(this.bot, destination.location);
+    }
+  },
+  // Override in mixed-in class to set state and weights.
+  actionSelection: function() {
+    console.warn("%s doesn't override actionSelection!", this.constructor.name);
+  },
+  // Default activation function.
+  activate: function() {
+    this.status = GoalStatus.active;
+    var goal = this.actionSelection();
+    if (goal) {
+      this.addSubgoal(goal);
+    } else {
+      this.status = GoalStatus.failed;
+    }
+  },
+  // Get default state.
+  getState: function() {
+    return {
+      // Active boosts on the map.
+      boosts: this.bot.game.getBoosts(),
+      // TODO: Active bombs on the map.
+      bombs: [],
+      // Powerups on the map.
+      powerups: this.bot.game.getPowerups(),
+      // Target end location for testing boost grabs and distance ratio checking.
+      target: this.bot.game.findEnemyFlag().location
+    };
+  }
 };
 
 /**
@@ -142,34 +259,50 @@ function SetUpForGrab(bot) {
 }
 
 util.inherits(SetUpForGrab, CompositeGoal);
+_.merge(SetUpForGrab.prototype, ActionSelector);
 
-SetUpForGrab.prototype.activate = function() {
+/*SetUpForGrab.prototype.activate = function() {
   this.status = GoalStatus.active;
-  // TODO: Plan path through states.
-  var destination = this.bot.game.findEnemyFlag();
-  this.addSubgoal(new NavigateToPoint(this.bot, destination.location));
-};
+  var goal = this.actionSelection();
+  if (goal) {
+    this.addSubgoal(goal);
+  } else {
+    this.status = GoalStatus.failed;
+  }
+};*/
 
-SetUpForGrab.prototype.valueFunction = function() {
-  var boosts = this.bot.game.boosts();
-  var bombs = this.bot.game.bombs();
-  var powerups = this.bot.game.powerups();
-  var actions = [
-    {
-      type: "boost",
-      id: "boostid",
-      solution: {}
-    }, {
-      type: "powerup-spawned", // or powerup-spawning
-      id: "pupid" // get info when goal executes.
-    }, {
-
+/**
+ * Select an action that gives the lowest cost, return the goal.
+ * @return {Goal?} - The goal, or nothing if no action was found.
+ */
+SetUpForGrab.prototype.actionSelection = function() {
+  var state = this.getState();
+  var weights = {
+    havingPowerup: 5,
+    doingBoostGrab: 10,
+    doingBombGrab: 10,
+    waitingOnPowerup: 5,
+    beingOutsideBase: 0,
+    usingBoost: 5,
+    distanceRatio: 0.5
+  };
+  return this.getAction(state, weights);
+  /*
+  // Get action with lowest cost.
+  var lowest_cost = Infinity;
+  var selected_action = null;
+  for (var i = 0; i < actions.length; i++) {
+    var action = actions[i];
+    if (action.cost < lowest_cost) {
+      lowest_cost = action.cost;
+      selected_action = action;
     }
-  ];
-};
-
-SetUpForGrab.prototype.getActions = function(state, weights) {
-  // Get sequence of actions to get to grab setup.
+  }
+  if (selected_action) {
+    return this.getActionGoal(selected_action);
+  } else {
+    return null;
+  }*/
 };
 
 SetUpForGrab.prototype.process = function() {

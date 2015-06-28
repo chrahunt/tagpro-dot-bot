@@ -87,7 +87,7 @@ Bot.prototype.init = function() {
     this.touch(event);
   }.bind(this));
   this.initialized = true;
-  this.logger.log("bot:info", "Bot loaded."); // DEBUG
+  this.logger.log("bot:info", "Bot loaded.");
 };
 
 /**
@@ -128,8 +128,7 @@ Bot.prototype.initializeParameters = function() {
 Bot.prototype.processMap = function(map) {
   this.navmesh = new NavMesh(map, this.logger);
 
-  // Update navigation mesh visualization and set flag for
-  // sense function to pass message to brain.
+  // Sense navmesh update.
   this.navmesh.onUpdate(function(polys) {
     this.logger.log("bot:info", "Navmesh updated.");
     this.touch({
@@ -312,7 +311,6 @@ Bot.prototype.start = function() {
   }
 
   this.brain.think();
-  //this.actions.add("think", this.brain.think.bind(this.brain), this.parameters.intervals.think);
   this.actions.add("update", this.update.bind(this), this.parameters.intervals.update);
 };
 
@@ -322,37 +320,6 @@ Bot.prototype.start = function() {
  * @param {*} event - The sensation.
  */
 Bot.prototype.touch = function(event) {
-  // DEBUG: should not have manual.
-  if (this.stopped) return;// || this.state.control == "manual") return;
+  if (this.stopped) return;
   this.sense_queue.push(event);
-};
-
-/**
- * Send a chat message to the active game. Truncates messages that
- * are too long. Maximum length for a message is 71.
- * @param {string} message - The message to send.
- * @param {boolean} [all=true] - Whether the chat should be to all
- *   players or just to the team.
- */
-Bot.prototype.chat = function(message, all) {
-  if (typeof all == 'undefined') all = true;
-  if (!this.hasOwnProperty('lastMessage')) this.lastMessage = 0;
-  var limit = 500 + 10;
-  var now = Date.now();
-  var timeDiff = now - this.lastMessage;
-  var maxLength = 71;
-  if (timeDiff > limit) {
-    if (message.length > maxLength) {
-      message = message.substr(0, maxLength);
-    }
-    tagpro.socket.emit("chat", {
-      message: message,
-      toAll: all ? 1 : 0
-    });
-    this.lastMessage = Date.now();
-  } else if (timeDiff >= 0) {
-    setTimeout(function() {
-      this.chat(message, all);
-    }.bind(this), limit - timeDiff);
-  }
 };

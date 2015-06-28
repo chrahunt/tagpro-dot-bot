@@ -147,6 +147,10 @@ PowerupTracker.prototype.init = function() {
 
 /**
  * @typedef {object} Powerup
+ * @property {boolean} visible - Whether the powerup is visible.
+ * @property {integer} x - X location of powerup on map.
+ * @property {integer} y - Y location of powerup on map.
+ * @property {string} id - id of powerup
  * @property {boolean} present_known
  * @property {boolean} present
  * @property {boolean} taken_time_known
@@ -410,6 +414,8 @@ PowerupTracker.prototype.reconcilePowerups = function() {
       // Look for a nearby visible grab event.
       for (var i = 0, l = this.events.grabs.length; i < l; i++) {
         var event = this.events.grabs[i];
+        // Skip non-visible grab events.
+        if (!event.in_view) continue;
         if (tileLocation.dist(event.location) < MAX_GRAB_DISTANCE) {
           powerup.known = true;
           powerup.present_known = true;

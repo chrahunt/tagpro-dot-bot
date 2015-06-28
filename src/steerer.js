@@ -28,7 +28,7 @@ var Steerer = function(state) {
       this.gamestate.parameters.game.radius.ball
   };
   this.parameters.dynamic_avoid = {
-    look_ahead: 50,
+    look_ahead: 0,
     player_intersection_radius: 38
   };
   this.parameters.align = {
@@ -110,7 +110,7 @@ Steerer.prototype.inverseSteering = function(n) {
     var scaled = vectors[idx].mul(distance / 40);
     return clampVector(scaled, -2.5, 2.5);
   } else {
-    return clampVector(vectors[idx].mul(2), -2.5, 2.5);
+    return clampVector(vectors[idx].mul(3), -2.5, 2.5);
   }
 };
 

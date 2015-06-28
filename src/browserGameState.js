@@ -1,5 +1,6 @@
 var PowerupTracker = require('./powerup-tracker');
 var physics = require('./physics');
+var Maps = require('./maps');
 
 /**
  * @module gamestate
@@ -44,6 +45,7 @@ GameState.prototype.init = function() {
   this.optimizations();
   this.initEventListener();
   this.initPowerupTracker();
+  this.initMapInformation();
   this._initialized = true;
 };
 
@@ -142,6 +144,41 @@ GameState.prototype.initPowerupTracker = function() {
       fn(powerups);
     });
   }.bind(this), params.interval);
+};
+
+/**
+ * Initialize map-specific information.
+ */
+GameState.prototype.initMapInformation = function() {
+  if (!tagpro.map) {
+    setTimeout(function () {
+      this.initMapInformation();
+    }.bind(this), 100);
+    return;
+  }
+  var text = $("#mapInfo").text();
+  var identifiers = text.match(/Map: (.+) by (.+)/);
+  if (identifiers.length !== 3) {
+    console.warn("Map information not found 1.");
+    this.map_info = null;
+  } else {
+    var name = identifiers[1];
+    var author = identifiers[2];
+    var map = Maps.get(name, author);
+    if (map) {
+      console.log("Map information found.");
+      this.map_info = map;
+    } else {
+      console.warn("Map information not found 2.");
+      console.log("Name: '%s'; Author: '%s'.", name, author);
+      this.map_info = null;
+    }
+  }
+};
+
+GameState.prototype.getMapInfo = function() {
+  if (this.map_info) return this.map_info;
+  return null;
 };
 
 /**
@@ -505,7 +542,8 @@ GameState.prototype._arrayToCoord = function(row, col) {
  * @return {boolean} - Whether the player is visible.
  */
 GameState.prototype.visible = function(id) {
-  return !!this.player(id).draw;
+  var player = this.player(id);
+  return player && player.draw;
 };
 
 /**
@@ -607,6 +645,37 @@ GameState.prototype.getspikes = function() {
   }
 };
 
+// Get visible, active, and same or yellow-colored boost tiles. Returns
+// array of array location points.
+GameState.prototype.getBoosts = function() {
+  var locations;
+  if (this.hasOwnProperty("boost_locations")) {
+    locations = this.boost_locations;
+  } else {
+    locations = [];
+    for (var x = 0; x < tagpro.map.length; x++) {
+      for (var y = 0; y < tagpro.map[0].length; y++) {
+        var val = tagpro.map[x][y];
+        if (GameState.Tiles.boosts.hasOwnProperty(val)) {
+          locations.push({
+            x: x,
+            y: y,
+            state: GameState.Tiles.boosts[Math.floor(val)]
+          });
+        }
+      }
+    }
+    this.boost_locations = locations;
+  }
+  var wrongColor = (this.self.team == GameState.Teams.blue ? "red" : "blue");
+  locations = locations.filter(function (tile) {
+    return this.tileVisible(tile, 0) &&
+      tile.state !== wrongColor &&
+      GameState.Tiles.boosts[tagpro.map[tile.x][tile.y]];
+  }, this);
+  return locations;
+};
+
 // Static Game Information
 /**
  * Represents a tile along with its possible values and the value for the 'state' attribute
@@ -620,7 +689,8 @@ GameState.Tiles = {
   blueflag: {4: true, "4.1": false},
   powerup: {6: false, "6.1": "grip", "6.2": "bomb", "6.3": "tagpro", "6.4": "speed"},
   bomb: {10: true, "10.1": false},
-  spike: {7: true}
+  spike: {7: true},
+  boosts: {5: true, "5.1": false, 14: "red", "14.1": false, 15: "blue", "15.1": false}
 };
 
 GameState.Teams = {
