@@ -129,44 +129,32 @@ CalculatePath.prototype._postProcessPath = function(path) {
   if (path.length > 1) {
     path.shift();
   }
-  var spikes = this.bot.game.getspikes();
   var params = this.bot.parameters.nav;
   // The additional buffer to give the obstacles.
   var buffer = params.spike_buffer || 15;
   // The threshold for determining points which are 'close' to
   // obstacles.
   var threshold = params.spike_threshold || 35;
-  var spikesByPoint = new Map();
-  path.forEach(function(point) {
-    var closeSpikes = [];
-    spikes.forEach(function(spike) {
-      if (spike.dist(point) < threshold) {
-        closeSpikes.push(spike);
-      }
-    });
-    if (closeSpikes.length > 0) {
-      spikesByPoint.set(point, closeSpikes);
-    }
-  });
   for (var i = 0; i < path.length; i++) {
     var point = path[i];
-    if (spikesByPoint.has(point)) {
-      var obstacles = spikesByPoint.get(point);
-      if (obstacles.length == 1) {
-        // Move away from the single point.
-        var obstacle = obstacles[0];
-        var v = point.sub(obstacle);
-        var len = v.len();
-        var newPoint = obstacle.add(v.mul(1 + buffer / len));
-        path[i] = newPoint;
-      } else if (obstacles.length == 2) {
-        // Move away from both obstacles.
-        var center = obstacles[1].add(obstacles[0].sub(obstacles[1]).mul(0.5));
-        var v = point.sub(center);
-        var len = v.len();
-        var newPoint = center.add(v.mul(1 + (buffer + threshold) / len));
-        path[i] = newPoint;
-      }
+    var obstacles = this.bot.game.getNearbySpikes(point, threshold);
+    if (obstacles.length === 0) continue;
+    // Get average of obstacles.
+    var obstacle = obstacles.reduce(function (location, obstacle) {
+      return location.add(obstacle);
+    }, new Point(0, 0)).div(obstacles.length);
+    console.log(obstacle);
+    var dir = point.sub(obstacle);
+    path[i] = obstacle.add(dir.normalize().mul(40));
+  }
+  var wall_dist = this.bot.parameters.nav.wall_buffer;
+  for (var i = 0; i < path.length; i++) {
+    var point = path[i];
+    var wallv = this.bot.game.getNearestWallVertex(point);
+    var dist = wallv.dist(point);
+    if (dist < wall_dist) {
+      var dir = point.sub(wallv).normalize();
+      path[i] = point.add(dir.mul(wall_dist - dist));
     }
   }
   return path;
@@ -368,6 +356,7 @@ function SeekToPoint(bot, point) {
 }
 
 util.inherits(SeekToPoint, Goal);
+exports.SeekToPoint = SeekToPoint;
 
 /**
  * Sets the point associated with this goal to the target for the bot.

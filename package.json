@@ -36,6 +36,7 @@
     "watchify": "^3.2.1"
   },
   "dependencies": {
+    "d3": "^3.5.5",
     "lodash": "^3.9.3",
     "tagpro-navmesh": "^0.9.6"
   }

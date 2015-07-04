@@ -1,6 +1,7 @@
 var PowerupTracker = require('./powerup-tracker');
 var physics = require('./physics');
 var Maps = require('./maps');
+var QuadTree = require('d3').geom.quadtree();
 
 /**
  * @module gamestate
@@ -24,6 +25,10 @@ function GameState(tagpro) {
       spike: 15,
       ball: 19
     },
+    physics: {
+      dt: 1.0 / 60, // Length of single step in simulation.
+      damping: 0.5
+    },
     respawn: {
       powerup: 60e3 // powerup respawn time, in ms.
     }
@@ -42,10 +47,14 @@ module.exports = GameState;
 GameState.prototype.init = function() {
   this.self = this.player();
   this.socket = this.tagpro.socket;
+  this.tileSearchCache = {};
   this.optimizations();
   this.initEventListener();
   this.initPowerupTracker();
-  this.initMapInformation();
+  this.onMap(function (tiles) {
+    this.initMapInformation();
+    this.initSpatialInformation();
+  }.bind(this));
   this._initialized = true;
 };
 
@@ -150,12 +159,6 @@ GameState.prototype.initPowerupTracker = function() {
  * Initialize map-specific information.
  */
 GameState.prototype.initMapInformation = function() {
-  if (!tagpro.map) {
-    setTimeout(function () {
-      this.initMapInformation();
-    }.bind(this), 100);
-    return;
-  }
   var text = $("#mapInfo").text();
   var identifiers = text.match(/Map: (.+) by (.+)/);
   if (identifiers.length !== 3) {
@@ -171,9 +174,68 @@ GameState.prototype.initMapInformation = function() {
     } else {
       console.warn("Map information not found 2.");
       console.log("Name: '%s'; Author: '%s'.", name, author);
-      this.map_info = null;
+      this.map_info = {
+        name: name,
+        author: author
+      };
     }
   }
+};
+
+// Initialize spatial information like spikes and wall vertices for querying.
+GameState.prototype.initSpatialInformation = function() {
+  // Set extent to total map size.
+  QuadTree = QuadTree.extent([[0, 0], [tagpro.map.length * 40 + 40, tagpro.map[0].length * 40 + 40]]);
+  // Set up wall quadtree.
+  var walls = this.getTiles("wall");
+  var vertices = [];
+  walls.forEach(function (wall) {
+    var l = 40,
+        x = wall.x * l,
+        y = wall.y * l;
+
+    switch (wall.v) {
+      case 1:
+        vertices.push(
+          [x, y],
+          [x + l, y],
+          [x + l, y + l],
+          [x, y + l]);
+        break;
+      case 1.1:
+        vertices.push(
+          [x + l, y],
+          [x + l, y + l],
+          [x, y + l]);
+        break;
+      case 1.2:
+        vertices.push(
+          [x, y],
+          [x + l, y],
+          [x + l, y + l]);
+        break;
+      case 1.3:
+        vertices.push(
+          [x, y],
+          [x + l, y],
+          [x, y + l]);
+        break;
+      case 1.4:
+        vertices.push(
+          [x, y],
+          [x + l, y + l],
+          [x, y + l]);
+        break;
+    }
+  });
+  this.wallVertices = QuadTree(vertices);
+
+  // Set up spike quadree.
+  var spikes = this.getTiles("spike");
+  var spikePoints = spikes.map(function (spike) {
+    return [spike.x * 40 + 20, spike.y * 40 + 20];
+  });
+  this.spikeVertices = QuadTree(spikePoints);
 };
 
 GameState.prototype.getMapInfo = function() {
@@ -270,9 +332,9 @@ GameState.prototype.onMap = function(callback) {
   if (this.initialized() && tagpro.map) {
     callback(tagpro.map);
   } else {
-    this.socket.on('map', function(e) {
-      callback(e.tiles);
-    });
+    setTimeout(function () {
+      this.onMap(callback);
+    }.bind(this), 50);
   }
 };
 
@@ -301,6 +363,14 @@ GameState.prototype.on = function(eventName, fn) {
 };
 
 /**
+ * Returns the array of map tiles, or `null` if not initialized.
+ */
+GameState.prototype.map = function() {
+  if (typeof tagpro !== 'object' || !tagpro.map) return null;
+  return tagpro.map;
+};
+
+/**
  * Get player given by id, or `null` if no such player exists. If id
  * is not provided, then the current player is returned.
  */
@@ -321,14 +391,6 @@ GameState.prototype.team = function(id) {
   } else {
     return null;
   }
-};
-
-/**
- * Returns the array of map tiles, or `null` if not initialized.
- */
-GameState.prototype.map = function() {
-  if (typeof tagpro !== 'object' || !tagpro.map) return null;
-  return tagpro.map;
 };
 
 /**
@@ -369,48 +431,40 @@ GameState.prototype.pLocation = function(id, ahead, timeInSteps) {
     }
   }
   var steps = timeInSteps ? this._msToSteps(ahead) : ahead;
-  var player = this.player(id);
-  var v = this.velocity(id);
-  // Formula parameters.
-  var damping = 0.5;
-  var dt = (1.0 / 60);
-  // Initial velocity.
-  var v_x = v.x,
-      v_y = v.y;
-  // Holds displacement.
-  var d_x = 0,
-      d_y = 0;
-  var change_x = 0,
-      change_y = 0;
-  if (player.pressing.up) {
-    change_y = -1;
-  } else if (player.pressing.down) {
-    change_y = 1;
+  var ms = this.player(id).ms;
+  var v0 = this.velocity(id);
+  var acc = this.acceleration(id);
+  // Handle case where we get up to max speed.
+  var step_end_x = steps;
+  if (acc.x !== 0) {
+    var max_x = acc.x < 0 ? -ms : ms;
+    var stop_x = Math.floor(physics.getSteps(v0.x, acc.x, max_x));
+    if (stop_x < steps) {
+      step_end_x = stop_x;
+    }
   }
-  if (player.pressing.left) {
-    change_x = -1;
-  } else if (player.pressing.right) {
-    change_x = 1;
+  var step_end_y = steps;
+  if (acc.y !== 0) {
+    var max_y = acc.y < 0 ? -ms : ms;
+    var stop_y = Math.floor(physics.getSteps(v0.y, acc.y, max_y));
+    if (stop_y < steps) {
+      step_end_y = stop_y;
+    }
   }
-  // Change in acceleration each step.
-  var acc_term_x = player.ac * change_x,
-      acc_term_y = player.ac * change_y;
-  // Max speed check each step.
-  var ms_x = player.ms,
-      ms_y = player.ms;
-  var damping_factor = 1 - damping * dt;
+  var d_x = physics.getPosition(v0.x, acc.x, step_end_x),
+      d_y = physics.getPosition(v0.y, acc.y, step_end_y);
+  var left_x = step_end_x - steps,
+      left_y = step_end_y - steps;
+  if (left_x > 0) {
+    var v_x = acc.x < 0 ? -ms : ms;
+    d_x += v_x * (1.0 / 60) * v_x * 100;
+  }
+  if (left_y > 0) {
+    var v_y = acc.y < 0 ? -ms : ms;
+    d_y += v_y * (1.0 / 60) * v_y * 100;
+  }
 
-  for (var step = 0; step < steps; step++) {
-    if (Math.abs(v_x) < ms_x) v_x += acc_term_x;
-    if (Math.abs(v_y) < ms_y) v_y += acc_term_y;
-    v_x *= damping_factor;
-    v_y *= damping_factor;
-    d_x += v_x * dt;
-    d_y += v_y * dt;
-  }
-  var coord_scale = 100;
-  // Convert from physics units to x, y coordinates.
-  var d = new Point(d_x * coord_scale, d_y * coord_scale);
+  var d = new Point(d_x, d_y);
 
   var current_location = this.location(id);
 
@@ -418,24 +472,23 @@ GameState.prototype.pLocation = function(id, ahead, timeInSteps) {
 };
 
 /**
- * Get velocity of player given by id. If id is not provided, then
- * returns the velocity for the current player.
+ * Gets velocity of player with given id.
  * @param {integer} [id] - The id of the player to get the velocity
- *   for. Defaults to id of current player.
+ *   for. Default is the id of current player.
  * @return {Point} - The velocity of the player.
  */
 GameState.prototype.velocity = function(id) {
   var player = this.player(id);
-  var clx, cly;
+  var v_x, v_y;
   if (player.body) {
     var vel = player.body.GetLinearVelocity();
-    clx = vel.x;
-    cly = vel.y;
+    v_x = vel.x;
+    v_y = vel.y;
   } else {
-    clx = player.lx;
-    cly = player.ly;
+    v_x = player.lx;
+    v_y = player.ly;
   }
-  return new Point(clx, cly);
+  return new Point(v_x, v_y);
 };
 
 /**
@@ -465,41 +518,39 @@ GameState.prototype.pVelocity = function(id, ahead, timeInSteps) {
     }
   }
   var steps = timeInSteps ? this._msToSteps(ahead) : ahead;
-  var player = this.player(id);
-  var v = this.velocity(id);
-  // Formula parameters.
-  var damping = 0.5;
-  var dt = (1.0 / 60);
-  // Initial velocity.
-  var v_x = v.x,
-      v_y = v.y;
-  var change_x = 0,
-      change_y = 0;
-  if (player.pressing.up) {
-    change_y = -1;
-  } else if (player.pressing.down) {
-    change_y = 1;
-  }
-  if (player.pressing.left) {
-    change_x = -1;
-  } else if (player.pressing.right) {
-    change_x = 1;
-  }
-  // Change in acceleration each step.
-  var acc_term_x = player.ac * change_x,
-      acc_term_y = player.ac * change_y;
-  // Max speed check each step.
-  var ms_x = player.ms * change_x,
-      ms_y = player.ms * change_y;
-  var damping_factor = 1 - damping * dt;
-  for (var step = 0; step < steps; step++) {
-    if (v_x < ms_x) v_x += acc_term_x;
-    if (v_y < ms_y) v_y += acc_term_y;
-    v_x *= damping_factor;
-    v_y *= damping_factor;
-  }
+  var ms = this.player(id).ms; // Player max speed.
+  var v0 = this.velocity(id);
+  var acc = this.acceleration(id);
+  
+  var v_x = physics.getVelocity(v0.x, acc.x, steps),
+      v_y = physics.getVelocity(v0.y, acc.y, steps);
+  return new Point(Math.min(Math.max(-ms, v_x), ms), Math.min(Math.max(-ms, v_y), ms));
+};
 
-  return new Point(v_x, v_y);
+/**
+ * Get acceleration applied to a player based on the buttons they are
+ * pressing.
+ * @param {integer} [id] - The id of the player to get acceleration
+ *   for, defaults to the id of the current player.
+ * @return {Point} - The x and y acceleration being applied to the
+ *   player.
+ */
+GameState.prototype.acceleration = function(id) {
+  var player = this.player(id);
+  var acc = player.ac;
+  var acc_x = 0,
+      acc_y = 0;
+  if (player.up && !player.down) {
+    acc_y = -acc;
+  } else if (player.down && !player.up) {
+    acc_y = acc;
+  }
+  if (player.left && !player.right) {
+    acc_x = -acc;
+  } else if (player.right && !player.left) {
+    acc_x = acc;
+  }
+  return new Point(acc_x, acc_y);
 };
 
 /**
@@ -693,6 +744,19 @@ GameState.Tiles = {
   boosts: {5: true, "5.1": false, 14: "red", "14.1": false, 15: "blue", "15.1": false}
 };
 
+GameState.TileIds = {
+  yellow_flag: [16, 16.1],
+  red_flag: [3, 3.1],
+  blue_flag: [4, 4.1],
+  powerup: [6, 6.1, 6.2, 6.3, 6.4],
+  bomb: [10, 10.1],
+  spike: [7],
+  boost: [5, 5.1],
+  red_boost: [14, 14.1],
+  blue_boost: [15, 15.1],
+  wall: [1, 1.1, 1.2, 1.3, 1.4]
+};
+
 GameState.Teams = {
   red: 1,
   blue: 2
@@ -764,6 +828,36 @@ GameState.prototype.findTiles = function(tile) {
 };
 
 /**
+ * Get locations of tiles with ids in array.
+ * @param {string} type - The type of tile to retrieve.
+ * @return {Array.<object>} - List of locations corresponding to tiles. Null if type wasn't found.
+ */
+GameState.prototype.getTiles = function(type) {
+  if (this.tileSearchCache.hasOwnProperty(type)) {
+    return this.tileSearchCache[type].slice();
+  } else {
+    var locations = [];
+    var ids = GameState.TileIds[type];
+    if (!ids) return null;
+    for (var x in this.tagpro.map) {
+      for (var y in this.tagpro.map[x]) {
+        var v = Number(this.tagpro.map[x][y]);
+        if (ids.indexOf(v) !== -1) {
+          locations.push({
+            x: x,
+            y: y,
+            v: v
+          });
+        }
+      }
+    }
+
+    this.tileSearchCache[type] = locations.slice();
+    return locations;
+  }
+};
+
+/**
  * Takes an array location and gives the traversable tiles adjacent to
  * that tile.
  * @param {Point} loc - The array location to search adjacent to.
@@ -792,6 +886,65 @@ GameState.prototype.getTraversableTilesNextTo = function(loc) {
     }
   }
   return traversableTiles;
+};
+
+/**
+ * Get wall vertex nearest to the point.
+ * @param {Point} p - The point to get the nearest wall vertex to.
+ * @return {Point} - The nearest wall vertex.
+ */
+GameState.prototype.getNearestWallVertex = function(p) {
+  var point = [p.x, p.y];
+  var result = this.wallVertices.find(point);
+  return new Point(result[0], result[1]);
+};
+
+GameState.prototype.getNearbyWallVertices = function(point, radius) {
+  return this._getPointsInRadius(this.wallVertices, point, radius);
+};
+
+GameState.prototype.getNearbySpikes = function(point, radius) {
+  return this._getPointsInRadius(this.spikeVertices, point, radius);
+};
+
+/**
+ * Search the provided quad tree for all points within a given radius
+ * @private
+ * @param {QuadTree} tree - The quadtree to search.
+ * @param {Point} point - The point to use as the basis for the search.
+ * @param {number} radius - The distance from the point to search.
+ * @return {Aray.<Point>} - The points within the given radius.
+ */
+GameState.prototype._getPointsInRadius = function(tree, point, radius) {
+  function dist2(x1, y1, x2, y2) {
+    return Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2);
+  }
+
+  function inRect(x, y, x1, y1, x2, y2) {
+    var dx1 = x - x1,
+      dx2 = x - x2,
+      dy1 = y - y1,
+      dy2 = y - y2;
+    return dx1 * dx2 < 0 && dy1 * dy2 < 0;
+  }
+
+  var r = radius;
+  var r2 = r * r;
+  var x = point.x,
+      y = point.y;
+  var results = [];
+  tree.visit(function getNeighbors(node, x1, y1, x2, y2) {
+    if (node.leaf) {
+      if (dist2(x, y, node.x, node.y) < r2) {
+        results.push([node.x, node.y]);
+      }
+    } else {
+      return !inRect(x, y, x1 - r, y1 - r, x2 + r, y2 + r);
+    }
+  });
+  return results.map(function (p) {
+    return new Point(p[0], p[1]);
+  });
 };
 
 // Identify the game time, whether capture the flag or yellow flag.

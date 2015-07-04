@@ -117,7 +117,8 @@ Bot.prototype.initializeParameters = function() {
   this.parameters.steering = this.steerer.parameters;
   this.parameters.nav = { // Used by CalculatePath.
     spike_buffer: 15, // How far to offset path points.
-    spike_threshold: 35 // How close spikes can be to points.
+    spike_threshold: 35, // How close spikes can be to points.
+    wall_buffer: 25 // How far to offset points from wall vertices.
   };
 };
 
