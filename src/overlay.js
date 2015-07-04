@@ -27,6 +27,9 @@ var Utils = {
     text.anchor = new PIXI.Point(0.5, 0.5);
     text.visible = false;
     return text;
+  },
+  makeVector: function (color, vector, container) {
+
   }
 };
 
@@ -52,7 +55,10 @@ var drawings = [
     init: function (bot, draw) {
       this.bot = bot;
       this.draw = draw;
-      this.draw.addBackground("mesh", 0x555555);
+      this.container = new PIXI.Graphics();
+      tagpro.renderer.layers.background.addChild(this.container);
+      this.color = 0x555555;
+      //this.draw.addBackground("mesh", 0x555555);
       this._init();
     },
     _init: function () {
@@ -61,9 +67,17 @@ var drawings = [
         return;
       }
       this.bot.navmesh.onUpdate(function (polys) {
-        this.draw.updateBackground("mesh", polys);
+        this._updateBackground(polys);
       }.bind(this));
-      this.draw.updateBackground("mesh", this.bot.navmesh.polys);
+      this._updateBackground(this.bot.navmesh.polys);
+    },
+    _updateBackground: function (polys) {
+      polys = polys.map(Utils.convertPolyToPIXIPoly);
+      this.container.clear();
+      this.container.lineStyle(1, this.color, 1);
+      polys.forEach(function (poly) {
+        this.container.drawShape(poly);
+      }, this);
     },
     update: function () {},
     show: function () {},
@@ -214,10 +228,9 @@ var drawings = [
       this.cost_vector_container.visible = false;
     }
   }, { // Powerups.
-    init: function (bot, draw) {
+    init: function (bot) {
       console.log("Initializing powerup overlay.");
       this.bot = bot;
-      this.draw = draw;
       
       this.powerup_respawn = 60000;
       var powerups = this.bot.game.powerupTracker.getPowerups();
@@ -233,13 +246,13 @@ var drawings = [
 
       this.indicators = {};
       powerups.forEach(function (powerup) {
-        var c = new PIXI.Sprite(texture);
-        c.anchor = new PIXI.Point(0.5, 0.5);
-        this.indicator_ui.addChild(c);
+        var sprite = new PIXI.Sprite(texture);
+        sprite.anchor = new PIXI.Point(0.5, 0.5);
+        this.indicator_ui.addChild(sprite);
         var t = Utils.makeText();
         this.indicator_ui.addChild(t);
         this.indicators[powerup.id] = {
-          container: c,
+          sprite: sprite,
           text: t
         };
       }, this);
@@ -318,9 +331,9 @@ var drawings = [
         var powerup = powerups[i];
         var indicator = this.indicators[powerup.id];
         if (powerup.visible) {
-          indicator.container.visible = false;
+          indicator.sprite.visible = false;
         } else {
-          indicator.container.visible = true;
+          indicator.sprite.visible = true;
           indicator.text.visible = true;
           
           var info = {};
@@ -342,26 +355,18 @@ var drawings = [
           if (!info.point) {
             console.error("Error finding overlay position for powerup indicator.");
           } else {
-            if (powerup.present_known) {
-              if (powerup.present) {
-                if (powerup.value_known) {
-                  //info.icon = powerup.value;
-                  info.text = "!";
-                } else {
-                  info.text = "!";
-                }
-              } else if (powerup.taken_time_known) {
-                var respawn_time = powerup.taken_time + this.powerup_respawn - Date.now();
-                info.text = (respawn_time / 1e3).toFixed(1);
-              } else {
-                info.text = "?";
-              }
+            if (powerup.present_known && powerup.present) {
+              // TODO: Icon if value known.
+              info.text = "!";
+            } else if (powerup.taken_time_known) {
+              var respawn_time = powerup.taken_time + this.powerup_respawn - Date.now();
+              info.text = (respawn_time / 1e3).toFixed(1);
             } else {
               info.text = "?";
             }
-            indicator.container.x = info.point.x;
-            indicator.container.y = info.point.y;
-            indicator.container.rotation = Math.atan2(info.dir.y, info.dir.x);
+            indicator.sprite.x = info.point.x;
+            indicator.sprite.y = info.point.y;
+            indicator.sprite.rotation = Math.atan2(info.dir.y, info.dir.x);
             indicator.text.x = info.point.x;
             indicator.text.y = info.point.y;
             indicator.text.setText(info.text);
@@ -399,7 +404,7 @@ var drawings = [
     _hideIndicator: function (powerup) {
       var indicator = this.indicators[powerup.id];
       indicator.text.visible = false;
-      indicator.container.visible = false;
+      indicator.sprite.visible = false;
     },
     // Draw overlays on visible powerups.
     _drawTileOverlays: function (powerups) {
@@ -440,16 +445,17 @@ var drawings = [
 
 /**
  * Visual overlay to display real-time state over the game.
+ * @alias module/overlay
  * @param {Bot} bot - The bot.
  */
-var Overlay = function(bot) {
+function Overlay(bot) {
   this.bot = bot;
   this.draw = new DrawUtils();
   drawings.forEach(function (drawing) {
     drawing.init(this.bot, this.draw);
   }, this);
   this.check();
-};
+}
 module.exports = Overlay;
 
 // Interval to check/update vectors.
@@ -502,7 +508,6 @@ DrawUtils.prototype.init = function() {
 
   // Store items to be drawn.
   this.vectors = {};
-  this.backgrounds = {};
   this.points = {};
 
   // Guard against properties not being created.
@@ -551,24 +556,6 @@ DrawUtils.prototype.hideVector = function(name) {
 
 DrawUtils.prototype.showVector = function(name) {
   this.vectors[name].container.visible = true;
-};
-
-/**
- * Add navmesh polys to background.
- */
-DrawUtils.prototype.addBackground = function(name, color) {
-  var background = {
-    color: color,
-    container: new PIXI.Graphics()
-  };
-  // Add background as child of background layer.
-  tagpro.renderer.layers.background.addChild(background.container);
-  this.backgrounds[name] = background;
-};
-
-DrawUtils.prototype.updateBackground = function(name, polys) {
-  this.backgrounds[name].polys = polys;
-  this._drawBackground(this.backgrounds[name]);
 };
 
 /**
@@ -707,26 +694,6 @@ DrawUtils.prototype._drawVector = function(vector) {
   var cp2 = leftBase.sub(v_n_l);
   c.bezierCurveTo(cp1.x, cp1.y, cp2.x, cp2.y, leftBase.x, leftBase.y);
   c.endFill();
-};
-
-/**
- * Redraw background in background container given a background
- * object.
- * @param {BackgroundInfo} background - The background to draw.
- */
-DrawUtils.prototype._drawBackground = function(background) {
-  var bg = background;
-
-  var polys = background.polys.map(function(poly) {
-    return Utils.convertPolyToPIXIPoly(poly);
-  }, this);
-
-  
-  bg.container.clear();
-  bg.container.lineStyle(1, bg.color, 1);
-  polys.forEach(function(shape) {
-    bg.container.drawShape(shape);
-  });
 };
 
 /**
