@@ -143,7 +143,6 @@ CalculatePath.prototype._postProcessPath = function(path) {
     var obstacle = obstacles.reduce(function (location, obstacle) {
       return location.add(obstacle);
     }, new Point(0, 0)).div(obstacles.length);
-    console.log(obstacle);
     var dir = point.sub(obstacle);
     path[i] = obstacle.add(dir.normalize().mul(40));
   }

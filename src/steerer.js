@@ -25,7 +25,9 @@ var Steerer = function(state) {
     current_location: 40,
     assumed_difference: 65,
     spike_intersection_radius: this.gamestate.parameters.game.radius.spike +
-      this.gamestate.parameters.game.radius.ball
+      this.gamestate.parameters.game.radius.ball,
+    wall_look_radius: 200,
+    wall_intersection_radius: this.gamestate.parameters.game.radius.ball + 5
   };
   this.parameters.dynamic_avoid = {
     look_ahead: 0,
@@ -122,16 +124,26 @@ Steerer.prototype.inverseSteering = function(n) {
 Steerer.prototype.inverseStaticAvoid = function(vectors) {
   var params = this.parameters.avoid;
 
+  var loc = this.gamestate.location();
+  
   // For determining intersection and cost of distance.
   var SPIKE_INTERSECTION_RADIUS = params.spike_intersection_radius;
-  var spikes = this.gamestate.getspikes();
-  spikes = spikes.map(function (spike) {
+  var spikes = this.gamestate.getspikes().map(function (spike) {
     return {
       loc: spike,
       radius: SPIKE_INTERSECTION_RADIUS
     };
   });
-  return this.inverseAvoid(vectors, spikes);
+  var walls = this.gamestate.getNearbyWallVertices(loc, params.wall_look_radius).map(function (v) {
+    return {
+      loc: v,
+      radius: params.wall_intersection_radius
+    };
+  });
+  
+  var obstacles = walls.concat(spikes);
+
+  return this.inverseAvoid(vectors, obstacles);
 };
 
 Steerer.prototype.inverseDynamicAvoid = function(vectors) {
@@ -167,18 +179,39 @@ Steerer.prototype.getInfluenceRegion = function(id) {
   }
 };
 
+/**
+ * Represents the bounding circle of an obstacle to avoid.
+ * @typedef {object} Obstacle
+ * @property {Point} loc - The location of the center of the obstacle.
+ * @property {number} radius - The radius of the bounding circle.
+ */
+/**
+ * Apply the inverse avoidance behavior to avoid a set of obstacles
+ * @private
+ * @param {Array.<Point>} vectors - The directions to consider.
+ * @param {Array.<Obstacle>} obstacles - The obstacles to avoid.
+ * @return {Array.<number>} - The costs associated with each direction
+ *   as determined by the likelihood a direction will result in hitting
+ *   a static obstacle.
+ */
 Steerer.prototype.inverseAvoid = function(vectors, obstacles) {
   var costs = zeroArray(vectors.length);
   var params = this.parameters.avoid;
 
   // For determining how many ms to look ahead for the location to use
-  // as the basis for seeing the impact a direction will have.
+  // as the basis for seeing the impact a direction will have, essentially
+  // where will the bot be before the button press starts to have an impact
+  // on velocity.
+  // TODO: Determing dynamically based on ping and feedback.
   var BASIS = params.current_location;
+
   var LOOK_AHEAD = params.max_see_ahead;
   var MED_LOOK_AHEAD = params.int_see_ahead;
 
-  // For determining how much difference heading towards a single direction
-  // will make.
+  // Indicates how much of a difference pressing a button will make on
+  // velocity.
+  // TODO: Determine dynamically based on how long it will be before the
+  // bot will be able to make adjustments to the 
   var DIR_LOOK_AHEAD = params.assumed_difference;
 
   // Ray with current position as basis.
@@ -186,8 +219,6 @@ Steerer.prototype.inverseAvoid = function(vectors, obstacles) {
   // look ahead 20ms
   var ahead = this.gamestate.pLocation(LOOK_AHEAD);
   var med_ahead = this.gamestate.pLocation(MED_LOOK_AHEAD);
-  var ahead_distance = ahead.sub(position).len();
-  var med_ahead_distance = med_ahead.sub(position).len();
 
   var relative_location = ahead.sub(position);
 

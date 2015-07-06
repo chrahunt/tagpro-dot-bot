@@ -33,7 +33,9 @@ var Bot = function(gamestate, logger) {
     position: "offense",
     control: "automatic",
     enemies: false, // ids of players to be avoided.
-    disabled: false
+    disabled: false,
+    cycle_length: 0,
+    last_update: null
   };
 
   this.initialized = false;
@@ -167,13 +169,12 @@ Bot.prototype.update = function() {
   this.move();
   // Track rate of update call.
   var now = performance.now();
-  if (!this.lastUpdate) {
-    this.lastUpdate = now;
-  } else {
-    var diff = this.lastUpdate - now;
-    var persecond = 1e3 / diff;
-    this.info.update = this.info.update * 0.9 + persecond * 0.1;
+  if (this.state.last_update) {
+    var diff = this.state.last_update - now;
+    this.state.cycle_length = diff;
+    this.info.update = this.state.cycle_length;
   }
+  this.state.last_update = now;
 };
 
 /**

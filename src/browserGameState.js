@@ -406,6 +406,58 @@ GameState.prototype.location = function(id) {
   return new Point(player.x + 20, player.y + 20);
 };
 
+// 2D prediction functions
+/**
+ * Predict location based on given parameters.
+ * @param {Point} p0 - Initial position.
+ * @param {Point} v0 - Initial velocity.
+ * @param {integer} steps - Number of steps forward to predict.
+ * @param {Point} acc - Acceleration applied on each step.
+ * @param {number} ms - Max speed for the player.
+ * @return {Point} - Resulting location.
+ */
+GameState.prototype.predictLocation = function(p0, v0, steps, acc, ms) {
+  // Handle case where we get up to max speed before end of predicted period.
+  var step_end_x = steps;
+  if (acc.x !== 0) {
+    var max_x = acc.x < 0 ? -ms : ms;
+    var stop_x = Math.floor(physics.getSteps(v0.x, acc.x, max_x));
+    if (stop_x < steps) {
+      step_end_x = stop_x;
+    }
+  }
+  var step_end_y = steps;
+  if (acc.y !== 0) {
+    var max_y = acc.y < 0 ? -ms : ms;
+    var stop_y = Math.floor(physics.getSteps(v0.y, acc.y, max_y));
+    if (stop_y < steps) {
+      step_end_y = stop_y;
+    }
+  }
+  var d_x = physics.getPosition(v0.x, acc.x, step_end_x),
+      d_y = physics.getPosition(v0.y, acc.y, step_end_y);
+  // Add max speed portion of prediction.
+  var left_x = step_end_x - steps,
+      left_y = step_end_y - steps;
+  if (left_x > 0) {
+    var v_x = acc.x < 0 ? -ms : ms;
+    d_x += v_x * (1.0 / 60) * v_x * 100;
+  }
+  if (left_y > 0) {
+    var v_y = acc.y < 0 ? -ms : ms;
+    d_y += v_y * (1.0 / 60) * v_y * 100;
+  }
+
+  var d = new Point(d_x, d_y);
+
+  return p0.add(d);
+};
+
+
+GameState.prototype.predictVelocity = function() {
+  // body...
+};
+
 /**
  * Get predicted location based on current position and velocity.
  * @param {integer} [id] - The id of the player to get the predicted
@@ -434,41 +486,8 @@ GameState.prototype.pLocation = function(id, ahead, timeInSteps) {
   var ms = this.player(id).ms;
   var v0 = this.velocity(id);
   var acc = this.acceleration(id);
-  // Handle case where we get up to max speed.
-  var step_end_x = steps;
-  if (acc.x !== 0) {
-    var max_x = acc.x < 0 ? -ms : ms;
-    var stop_x = Math.floor(physics.getSteps(v0.x, acc.x, max_x));
-    if (stop_x < steps) {
-      step_end_x = stop_x;
-    }
-  }
-  var step_end_y = steps;
-  if (acc.y !== 0) {
-    var max_y = acc.y < 0 ? -ms : ms;
-    var stop_y = Math.floor(physics.getSteps(v0.y, acc.y, max_y));
-    if (stop_y < steps) {
-      step_end_y = stop_y;
-    }
-  }
-  var d_x = physics.getPosition(v0.x, acc.x, step_end_x),
-      d_y = physics.getPosition(v0.y, acc.y, step_end_y);
-  var left_x = step_end_x - steps,
-      left_y = step_end_y - steps;
-  if (left_x > 0) {
-    var v_x = acc.x < 0 ? -ms : ms;
-    d_x += v_x * (1.0 / 60) * v_x * 100;
-  }
-  if (left_y > 0) {
-    var v_y = acc.y < 0 ? -ms : ms;
-    d_y += v_y * (1.0 / 60) * v_y * 100;
-  }
-
-  var d = new Point(d_x, d_y);
-
-  var current_location = this.location(id);
-
-  return current_location.add(d);
+  var p0 = this.location(id);
+  return this.predictLocation(p0, v0, steps, acc, ms);
 };
 
 /**
@@ -524,6 +543,7 @@ GameState.prototype.pVelocity = function(id, ahead, timeInSteps) {
   
   var v_x = physics.getVelocity(v0.x, acc.x, steps),
       v_y = physics.getVelocity(v0.y, acc.y, steps);
+  // Limit predicted velocity to max speed of player.
   return new Point(Math.min(Math.max(-ms, v_x), ms), Math.min(Math.max(-ms, v_y), ms));
 };
 
@@ -562,6 +582,7 @@ GameState.prototype.stoppingDistance = function(id) {
   if (typeof id == "undefined") id = this.tagpro.playerId;
   var player = this.player(id);
 };
+
 /**
  * Given a time in ms, return the number of steps needed to represent
  * that time.

@@ -4,7 +4,8 @@ var Goal = require('./goals').Goal,
     GoalStatus = require('./goals').GoalStatus;
 var Offense = require('./offense'),
     Defense = require('./defense'),
-    ManualControl = require('./manual');
+    ManualControl = require('./manual'),
+    OFM = require('./ofm');
 var Point = require('../geometry').Point;
 
 /**
@@ -93,6 +94,7 @@ Brain.prototype.handleMessage = function(msg) {
  */
 Brain.prototype.think = function() {
   if (!this.alive) return;
+  console.log("Thinking.");
   var control = this.bot.getState("control");
   if (control == "automatic") {
     if (this.gameType == this.bot.game.GameTypes.ctf) {
@@ -114,7 +116,11 @@ Brain.prototype.think = function() {
       }
     } else {
       // Center flag game.
-      //this.bot.chat("I can't play this.");
+      var map_info = this.bot.game.getMapInfo();
+      if (map_info.name === "Open Field Masters") {
+        console.log("OFM");
+        this.addSubgoal(new OFM(this.bot));
+      }
     }
   } else if (control == "manual") {
     // Manual control.

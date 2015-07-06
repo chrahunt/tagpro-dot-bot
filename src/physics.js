@@ -4,6 +4,7 @@ var damping = 0.5;
 var scale = 100;
 // Damping factor.
 var d = 1 - damping * dt;
+
 /**
  * Get predicted velocity along one axis.
  * @param {number} v0 - Initial velocity
